@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scrobble: (track: object) => ipcRenderer.invoke('scrobble:scrobble', track),
   },
 
-  // Shell
+  // Shell & Tray
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
+  onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => {
+    const handler = (_e: any, action: 'toggle' | 'prev' | 'next') => cb(action);
+    ipcRenderer.on('tray:action', handler);
+    return () => ipcRenderer.removeListener('tray:action', handler);
+  },
 });

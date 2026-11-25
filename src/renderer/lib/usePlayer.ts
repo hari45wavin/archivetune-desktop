@@ -66,6 +66,7 @@ declare global {
       maximize: () => void;
       close: () => void;
       openExternal: (url: string) => void;
+      onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => () => void;
     };
   }
 }
@@ -290,8 +291,49 @@ export function usePlayer() {
 let globalEventsRegistered = false;
 
 export function usePlayerEvents() {
-  const { setPosition, setDuration } = usePlayerStore();
-  const { skipNext, pause } = usePlayer();
+  const { currentTrack, isPlaying, setPosition, setDuration } = usePlayerStore();
+  const { skipNext, skipPrev, pause, resume, seek } = usePlayer();
+
+  // Sync Windows SMTC / Linux MPRIS metadata & hardware media keys
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    if (currentTrack) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.album || 'ArchiveTune',
+        artwork: currentTrack.thumbnail
+          ? [{ src: currentTrack.thumbnail, sizes: '512x512', type: 'image/jpeg' }]
+          : [],
+      });
+    } else {
+      navigator.mediaSession.metadata = null;
+    }
+  }, [currentTrack]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }, [isPlaying]);
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    ms.setActionHandler('play', () => { resume(); });
+    ms.setActionHandler('pause', () => { pause(); });
+    ms.setActionHandler('previoustrack', () => { skipPrev(); });
+    ms.setActionHandler('nexttrack', () => { skipNext(); });
+    ms.setActionHandler('seekto', (details) => {
+      if (typeof details.seekTime === 'number') seek(details.seekTime);
+    });
+    return () => {
+      ms.setActionHandler('play', null);
+      ms.setActionHandler('pause', null);
+      ms.setActionHandler('previoustrack', null);
+      ms.setActionHandler('nexttrack', null);
+      ms.setActionHandler('seekto', null);
+    };
+  }, [resume, pause, skipPrev, skipNext, seek]);
 
   useEffect(() => {
     const handleTrackEnded = () => {
@@ -329,11 +371,23 @@ export function usePlayerEvents() {
 
     const unsubEnded = api.player.onEnded(handleTrackEnded);
 
+    const unsubTray = api.onTrayAction?.((action) => {
+      if (action === 'toggle') {
+        if (usePlayerStore.getState().isPlaying) pause();
+        else resume();
+      } else if (action === 'next') {
+        skipNext();
+      } else if (action === 'prev') {
+        skipPrev();
+      }
+    });
+
     return () => {
       fallbackEndedHandler = null;
       unsubProgress();
       unsubEnded();
+      unsubTray?.();
       globalEventsRegistered = false;
     };
-  }, [setPosition, setDuration, skipNext, pause]);
+  }, [setPosition, setDuration, skipNext, skipPrev, pause, resume]);
 }

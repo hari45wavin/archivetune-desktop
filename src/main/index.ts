@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } from 'electron';
 import dns from 'dns';
 import os from 'os';
 import path from 'path';
@@ -35,6 +35,7 @@ if (!gotTheLock) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 const isDev = process.env.NODE_ENV === 'development';
 
 let cachedIconPath: string | null = null;
@@ -130,8 +131,52 @@ process.on('unhandledRejection', (reason) => {
   console.error('ArchiveTune Unhandled Rejection:', reason);
 });
 
+function setupTray() {
+  if (tray) return;
+  const iconPath = resolveIconPath();
+  if (!iconPath) return;
+
+  try {
+    const icon = nativeImage.createFromPath(iconPath).resize({ width: 22, height: 22 });
+    tray = new Tray(icon);
+    tray.setToolTip('ArchiveTune');
+
+    const showMainWindow = () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        createWindow();
+        return;
+      }
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    };
+
+    const sendTrayAction = (action: 'toggle' | 'prev' | 'next') => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('tray:action', action);
+      }
+    };
+
+    const menu = Menu.buildFromTemplate([
+      { label: 'Show ArchiveTune', click: showMainWindow },
+      { type: 'separator' },
+      { label: 'Play / Pause', click: () => sendTrayAction('toggle') },
+      { label: 'Previous Track', click: () => sendTrayAction('prev') },
+      { label: 'Next Track', click: () => sendTrayAction('next') },
+      { type: 'separator' },
+      { label: 'Quit', click: () => app.quit() },
+    ]);
+
+    tray.setContextMenu(menu);
+    tray.on('click', showMainWindow);
+  } catch (err) {
+    console.warn('Tray setup skipped:', err);
+  }
+}
+
 app.whenReady().then(() => {
   createWindow();
+  setupTray();
 
   // Register all IPC handlers
   setupPlayerIPC();
