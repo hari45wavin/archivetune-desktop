@@ -28,10 +28,15 @@ declare global {
       };
       ytmusic: {
         search: (query: string) => Promise<Track[]>;
+        searchCollections: (
+          query: string,
+          kind: 'album' | 'artist' | 'playlist'
+        ) => Promise<Array<{ id: string; title: string; subtitle: string; thumbnail: string; kind: 'album' | 'artist' | 'playlist' }>>;
         getStreamUrl: (videoId: string) => Promise<{ url: string; ok: boolean; error?: string }>;
         getHome: () => Promise<{ trending: Track[] }>;
         getCategory: (category: string, forceRefresh?: boolean) => Promise<Track[]>;
         getSuggested: (videoId: string) => Promise<Track[]>;
+        getArtist: (artistId: string) => Promise<Track[]>;
         getAlbum: (albumId: string) => Promise<Track[]>;
         getPlaylist: (playlistId: string) => Promise<Track[]>;
       };

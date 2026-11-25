@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // YouTube Music Live
   ytmusic: {
     search: (query: string) => ipcRenderer.invoke('ytmusic:search', query),
+    searchCollections: (query: string, kind: 'album' | 'artist' | 'playlist') =>
+      ipcRenderer.invoke('ytmusic:searchCollections', query, kind),
     getStreamUrl: (videoId: string) => ipcRenderer.invoke('ytmusic:getStreamUrl', videoId),
     getHome: () => ipcRenderer.invoke('ytmusic:getHome'),
     getCategory: (category: string, forceRefresh = false) =>

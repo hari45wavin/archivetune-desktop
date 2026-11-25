@@ -64,6 +64,20 @@ export interface SearchResult {
   album?: string;
 }
 
+export interface CollectionResult {
+  id: string;
+  title: string;
+  subtitle: string;
+  thumbnail: string;
+  kind: 'album' | 'artist' | 'playlist';
+}
+
+const COLLECTION_SEARCH_PARAMS: Record<'album' | 'artist' | 'playlist', string> = {
+  album: 'EgWKAQIYAWoKEAMQBBAJEAoQBQ%3D%3D',
+  artist: 'EgWKAQIgAWoKEAMQBBAJEAoQBQ%3D%3D',
+  playlist: 'EgWKAQIoAWoKEAMQBBAJEAoQBQ%3D%3D',
+};
+
 const CATEGORY_PLAYLISTS: Record<string, string> = {
   trending: 'VLPL4fGSI1pDJn5kI81J1fYWK5eZRl1zJ5kM',
   global_top: 'VLPL4fGSI1pDJn6jXS_PEoN9oe32PUTrNwZ3',
@@ -538,6 +552,50 @@ export async function getSuggestedTracks(videoId: string): Promise<SearchResult[
   return results;
 }
 
+export async function searchCollections(
+  query: string,
+  kind: 'album' | 'artist' | 'playlist'
+): Promise<CollectionResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const data = await fetchInnerTubeJson('https://music.youtube.com/youtubei/v1/search?prettyPrint=false', {
+    context: WEB_REMIX_CONTEXT,
+    query: trimmed,
+    params: COLLECTION_SEARCH_PARAMS[kind],
+  });
+
+  const seen = new Set<string>();
+  const results: CollectionResult[] = [];
+
+  for (const r of collectRenderers(data)) {
+    const browseId: string | undefined = r?.navigationEndpoint?.browseEndpoint?.browseId;
+    if (!browseId || seen.has(browseId)) continue;
+
+    const cols = r?.flexColumns || [];
+    const title = (cols[0]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [])
+      .map((x: any) => x.text)
+      .join('')
+      .trim();
+    if (!title) continue;
+
+    const subtitle = (cols[1]?.musicResponsiveListItemFlexColumnRenderer?.text?.runs || [])
+      .map((x: any) => x.text)
+      .join('')
+      .trim();
+
+    const thumbs = r?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails || [];
+    const rawThumb = thumbs.length > 0 ? thumbs[thumbs.length - 1]?.url : undefined;
+    const thumbnail = rawThumb ? rawThumb.replace(/=w\d+-h\d+-[^&"'\s]+$/, '=w544-h544-l90-rj') : '';
+
+    seen.add(browseId);
+    results.push({ id: browseId, title, subtitle, thumbnail, kind });
+    if (results.length >= 24) break;
+  }
+
+  return results;
+}
+
 export function setupYTMusicIPC() {
   ipcMain.handle('ytmusic:getHome', async () => {
     try {
@@ -566,6 +624,18 @@ export function setupYTMusicIPC() {
       return [];
     }
   });
+
+  ipcMain.handle(
+    'ytmusic:searchCollections',
+    async (_e, query: string, kind: 'album' | 'artist' | 'playlist') => {
+      try {
+        return await searchCollections(query, kind);
+      } catch (err) {
+        console.error('ytmusic:searchCollections error', err);
+        return [];
+      }
+    }
+  );
 
   ipcMain.handle('ytmusic:getStreamUrl', async (_e, videoId: string) => {
     try {
