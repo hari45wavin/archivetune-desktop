@@ -480,6 +480,64 @@ export async function getStreamUrl(videoId: string): Promise<string> {
   return streamUrl;
 }
 
+function collectPanelRenderers(node: any, out: any[] = []): any[] {
+  if (!node || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    for (const item of node) collectPanelRenderers(item, out);
+    return out;
+  }
+  if (node.playlistPanelVideoRenderer) {
+    out.push(node.playlistPanelVideoRenderer);
+  }
+  for (const val of Object.values(node)) {
+    if (val && typeof val === 'object') collectPanelRenderers(val, out);
+  }
+  return out;
+}
+
+function parsePanelRenderer(r: any): SearchResult | null {
+  const id: string | undefined = r?.videoId || r?.navigationEndpoint?.watchEndpoint?.videoId;
+  if (!id) return null;
+  const title = cleanTitle(r?.title?.runs?.map((x: any) => x.text).join('').trim() || '');
+  if (!title) return null;
+
+  const bylineRuns = r?.longBylineText?.runs || r?.shortBylineText?.runs || [];
+  const rawArtist = bylineRuns[0]?.text || 'YouTube Music';
+  const duration = parseDurationText(r?.lengthText?.runs?.map((x: any) => x.text).join('').trim());
+  const thumbs = r?.thumbnail?.thumbnails || [];
+  const rawThumb = thumbs.length > 0 ? thumbs[thumbs.length - 1]?.url : undefined;
+
+  return {
+    id,
+    title,
+    artist: cleanArtist(rawArtist),
+    thumbnail: upgradeThumbnail(rawThumb, id),
+    duration,
+  };
+}
+
+export async function getSuggestedTracks(videoId: string): Promise<SearchResult[]> {
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return [];
+  const data = await fetchInnerTubeJson('https://music.youtube.com/youtubei/v1/next?prettyPrint=false', {
+    context: WEB_REMIX_CONTEXT,
+    videoId,
+    playlistId: `RDAMVM${videoId}`,
+    isAudioOnly: true,
+  });
+
+  const seen = new Set<string>([videoId]);
+  const results: SearchResult[] = [];
+  for (const renderer of collectPanelRenderers(data)) {
+    const parsed = parsePanelRenderer(renderer);
+    if (parsed && !seen.has(parsed.id)) {
+      seen.add(parsed.id);
+      results.push(parsed);
+      if (results.length >= 25) break;
+    }
+  }
+  return results;
+}
+
 export function setupYTMusicIPC() {
   ipcMain.handle('ytmusic:getHome', async () => {
     try {
@@ -516,6 +574,43 @@ export function setupYTMusicIPC() {
     } catch (err: any) {
       console.error('ytmusic:getStreamUrl error', err);
       return { url: null, ok: false, error: err.message || String(err) };
+    }
+  });
+
+  ipcMain.handle('ytmusic:getSuggested', async (_e, videoId: string) => {
+    try {
+      return await getSuggestedTracks(videoId);
+    } catch (err) {
+      console.error('ytmusic:getSuggested error', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('ytmusic:getPlaylist', async (_e, playlistId: string) => {
+    try {
+      const browseId = playlistId.startsWith('VL') ? playlistId : `VL${playlistId}`;
+      return await fetchInnerTubePlaylist(browseId, 100);
+    } catch (err) {
+      console.error('ytmusic:getPlaylist error', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('ytmusic:getAlbum', async (_e, albumId: string) => {
+    try {
+      return await fetchInnerTubePlaylist(albumId, 50);
+    } catch (err) {
+      console.error('ytmusic:getAlbum error', err);
+      return [];
+    }
+  });
+
+  ipcMain.handle('ytmusic:getArtist', async (_e, artistId: string) => {
+    try {
+      return await fetchInnerTubePlaylist(artistId, 50);
+    } catch (err) {
+      console.error('ytmusic:getArtist error', err);
+      return [];
     }
   });
 }

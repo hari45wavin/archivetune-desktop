@@ -19,6 +19,7 @@ import {
   Check,
   Music2,
   Sparkles,
+  Radio,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePlayerStore, useUIStore } from '../store';
@@ -577,8 +578,23 @@ export default function NowPlayingOverlay() {
 }
 
 function QueueList() {
-  const { queue, queueIndex, setQueue, reorderQueue, removeFromQueue, clearQueue } = usePlayerStore();
+  const { currentTrack, queue, queueIndex, setQueue, addMultipleToQueue, reorderQueue, removeFromQueue, clearQueue } =
+    usePlayerStore();
   const { playTrack } = usePlayer();
+  const [radioLoading, setRadioLoading] = useState(false);
+
+  const handleLoadRadio = async () => {
+    if (!currentTrack || currentTrack.source !== 'youtube' || radioLoading) return;
+    setRadioLoading(true);
+    try {
+      const suggested = await window.electronAPI?.ytmusic.getSuggested(currentTrack.id);
+      if (suggested && suggested.length > 0) {
+        addMultipleToQueue(suggested.map((t: any) => ({ ...t, source: 'youtube' as const })));
+      }
+    } finally {
+      setRadioLoading(false);
+    }
+  };
 
   if (queue.length === 0) {
     return (
@@ -591,16 +607,27 @@ function QueueList() {
 
   return (
     <div className="space-y-1.5 pb-8">
-      <div className="flex items-center justify-between pb-2 px-1">
+      <div className="flex items-center justify-between pb-2 px-1 gap-2">
         <span className="text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
           Playing Next ({queue.length})
         </span>
-        <button
-          onClick={clearQueue}
-          className="text-xs text-error hover:underline flex items-center gap-1"
-        >
-          <Trash2 size={12} /> Clear Queue
-        </button>
+        <div className="flex items-center gap-3">
+          {currentTrack?.source === 'youtube' && (
+            <button
+              onClick={handleLoadRadio}
+              disabled={radioLoading}
+              className="text-xs text-primary hover:underline flex items-center gap-1 disabled:opacity-50"
+            >
+              <Radio size={12} /> {radioLoading ? 'Loading...' : 'Up Next Radio'}
+            </button>
+          )}
+          <button
+            onClick={clearQueue}
+            className="text-xs text-error hover:underline flex items-center gap-1"
+          >
+            <Trash2 size={12} /> Clear Queue
+          </button>
+        </div>
       </div>
 
       {queue.map((track, i) => {

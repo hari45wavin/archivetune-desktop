@@ -51,6 +51,7 @@ interface PlayerState {
   setCurrentTrack: (track: Track) => void;
   setQueue: (tracks: Track[], startIndex?: number) => void;
   addToQueue: (track: Track) => void;
+  addMultipleToQueue: (tracks: Track[]) => void;
   removeFromQueue: (index: number) => void;
   reorderQueue: (fromIndex: number, toIndex: number) => void;
   clearQueue: () => void;
@@ -109,6 +110,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ queue: [...tracks], originalQueue: [...tracks], queueIndex: startIndex }),
   addToQueue: (track) =>
     set((s) => ({ queue: [...s.queue, track], originalQueue: [...s.originalQueue, track] })),
+  addMultipleToQueue: (tracks) =>
+    set((s) => {
+      const existing = new Set(s.queue.map((t) => t.id));
+      const unique = tracks.filter((t) => !existing.has(t.id));
+      return {
+        queue: [...s.queue, ...unique],
+        originalQueue: [...s.originalQueue, ...unique],
+      };
+    }),
   removeFromQueue: (index) =>
     set((s) => {
       const newQueue = s.queue.filter((_, i) => i !== index);
