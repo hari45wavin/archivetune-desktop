@@ -71,7 +71,7 @@ export default function NowPlayingOverlay() {
     setLyricsControlsMode,
   } = usePlayerStore();
 
-  const { setShowNowPlaying } = useUIStore();
+  const { setShowNowPlaying, canvasEnabled, setCanvasEnabled } = useUIStore();
   const {
     pause,
     resume,
@@ -200,11 +200,22 @@ export default function NowPlayingOverlay() {
       initial={{ opacity: 0, y: 40 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 40 }}
-      className="fixed inset-0 z-50 flex bg-surface"
+      className="fixed inset-0 z-50 flex bg-surface overflow-hidden"
     >
+      {/* Ambient Canvas Visual Layer */}
+      {canvasEnabled && currentTrack.thumbnail && (
+        <motion.div
+          aria-hidden
+          animate={{ scale: isPlaying ? [1.08, 1.18, 1.08] : 1.08 }}
+          transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
+          className="pointer-events-none absolute inset-0 opacity-25 blur-3xl bg-cover bg-center"
+          style={{ backgroundImage: `url(${currentTrack.thumbnail})` }}
+        />
+      )}
+
       {/* Left section: Album art & background glow */}
       <div
-        className="w-1/2 flex items-center justify-center p-12 bg-surface-container relative overflow-hidden"
+        className="w-1/2 flex items-center justify-center p-12 bg-surface-container/60 relative overflow-hidden"
         style={{
           backgroundImage: currentTrack.thumbnail ? `url(${currentTrack.thumbnail})` : undefined,
           backgroundSize: 'cover',
@@ -322,6 +333,18 @@ export default function NowPlayingOverlay() {
             >
               <Sparkles size={14} />
               <span>Norm</span>
+            </button>
+
+            <button
+              onClick={() => setCanvasEnabled(!canvasEnabled)}
+              className={`px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
+                canvasEnabled
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+              }`}
+              title="Toggle Ambient Canvas background"
+            >
+              Canvas
             </button>
 
             {/* Download Track */}

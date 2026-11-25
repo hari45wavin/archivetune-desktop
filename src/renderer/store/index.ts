@@ -224,12 +224,14 @@ interface UIState {
   showLyrics: boolean;
   theme: 'dark' | 'light' | 'amoled';
   seedColor: string;
+  canvasEnabled: boolean;
 
   setPage: (page: string) => void;
   setShowNowPlaying: (show: boolean) => void;
   setShowLyrics: (show: boolean) => void;
   setTheme: (theme: 'dark' | 'light' | 'amoled') => void;
   setSeedColor: (color: string) => void;
+  setCanvasEnabled: (enabled: boolean) => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -238,10 +240,12 @@ export const useUIStore = create<UIState>((set) => ({
   showLyrics: false,
   theme: 'dark',
   seedColor: '#cbb9f5',
+  canvasEnabled: true,
 
   setPage: (page) => set({ page }),
   setShowNowPlaying: (showNowPlaying) => set({ showNowPlaying }),
   setShowLyrics: (showLyrics) => set({ showLyrics }),
+  setCanvasEnabled: (canvasEnabled) => set({ canvasEnabled }),
   setTheme: (theme) => {
     set({ theme });
     if (theme === 'amoled') {
