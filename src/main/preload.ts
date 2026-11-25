@@ -69,8 +69,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Lyrics
   lyrics: {
-    get: (title: string, artist: string, duration: number) =>
-      ipcRenderer.invoke('lyrics:get', title, artist, duration),
+    get: (title: string, artist: string, duration: number, videoId?: string) =>
+      ipcRenderer.invoke('lyrics:get', title, artist, duration, videoId),
   },
 
   // Scrobbling

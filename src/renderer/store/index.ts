@@ -31,6 +31,7 @@ interface PlayerState {
   history: Track[]; // recently played
   lyricsOffset: number; // in milliseconds (-5000 to +5000, fixes #987)
   lyricsFontSize: 'small' | 'medium' | 'large';
+  lyricsControlsMode: 'hide' | 'auto' | 'show';
 
   // Actions
   setCurrentTrack: (track: Track) => void;
@@ -53,6 +54,7 @@ interface PlayerState {
   setSleepTimer: (minutes: number | 'track' | null) => void;
   setLyricsOffset: (offset: number) => void;
   setLyricsFontSize: (size: 'small' | 'medium' | 'large') => void;
+  setLyricsControlsMode: (mode: 'hide' | 'auto' | 'show') => void;
   addToHistory: (track: Track) => void;
   nextTrack: () => Track | null;
   prevTrack: () => Track | null;
@@ -78,6 +80,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   history: [],
   lyricsOffset: 0,
   lyricsFontSize: 'medium',
+  lyricsControlsMode: 'show',
 
   setCurrentTrack: (track) => {
     set({ currentTrack: track });
@@ -138,8 +141,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setNormalization: (normalization) => set({ normalization }),
   setCrossfade: (crossfade) => set({ crossfade }),
   setSleepTimer: (sleepTimer) => set({ sleepTimer }),
-  setLyricsOffset: (lyricsOffset) => set({ lyricsOffset }),
+  setLyricsOffset: (lyricsOffset) => set({ lyricsOffset: Math.max(-5000, Math.min(5000, lyricsOffset)) }),
   setLyricsFontSize: (lyricsFontSize) => set({ lyricsFontSize }),
+  setLyricsControlsMode: (lyricsControlsMode) => set({ lyricsControlsMode }),
   addToHistory: (track) =>
     set((s) => {
       const filtered = s.history.filter((t) => t.id !== track.id);

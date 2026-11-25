@@ -1,12 +1,22 @@
 /**
  * lyrics.ts — Multi-source synced lyrics fetcher with smart title cleanup
  *
- * Waterfall: LRCLib (Cleaned Exact Match) → LRCLib (Fuzzy Search) → Raw Fallback
- * Returns LRC-format timestamped lines for the renderer to sync.
+ * Waterfall: LRCLib (Synced) → YouTube Music ANDROID_MUSIC (Synced) → LRCLib (Plain) → YouTube Music (Plain)
+ * Returns LRC-format timestamped lines and plain text for the renderer.
  */
 
-import { ipcMain } from 'electron';
-import https from 'https';
+import { ipcMain, net } from 'electron';
+
+const ANDROID_MUSIC_CONTEXT = {
+  client: {
+    clientName: 'ANDROID_MUSIC',
+    clientVersion: '7.27.52',
+    androidSdkVersion: 34,
+    osName: 'Android',
+    osVersion: '14',
+  },
+};
+const ANDROID_MUSIC_UA = 'com.google.android.apps.youtube.music/7.27.52 (Linux; U; Android 14; en_US) gzip';
 
 interface LyricLine {
   time: number; // seconds
@@ -19,25 +29,23 @@ interface LyricsResult {
   source: string;
 }
 
-function httpsGet(url: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const req = https.get(
-      url,
-      {
-        headers: {
-          'User-Agent': 'ArchiveTune-Desktop/1.0 (https://github.com/hari45wavin/archivetune-desktop)',
-        },
+async function httpFetchText(url: string, init?: RequestInit): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  try {
+    const res = await net.fetch(url, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'ArchiveTune-Desktop/1.0 (https://github.com/hari45wavin/archivetune-desktop)',
+        ...(init?.headers || {}),
       },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => resolve(data));
-        res.on('error', reject);
-      }
-    );
-    req.on('error', reject);
-    req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
-  });
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function parseLRC(lrc: string): LyricLine[] {
@@ -95,7 +103,7 @@ async function fetchLRCLib(title: string, artist: string, duration: number): Pro
     });
     if (duration > 0) params.append('duration', String(Math.round(duration)));
 
-    const data = await httpsGet(`https://lrclib.net/api/get?${params}`);
+    const data = await httpFetchText(`https://lrclib.net/api/get?${params}`);
     const json = JSON.parse(data);
     if (json.syncedLyrics) {
       return {
@@ -112,7 +120,7 @@ async function fetchLRCLib(title: string, artist: string, duration: number): Pro
   // 2. Try search with cleaned title + artist
   try {
     const params = new URLSearchParams({ q: `${cleanA} ${cleanT}` });
-    const data = await httpsGet(`https://lrclib.net/api/search?${params}`);
+    const data = await httpFetchText(`https://lrclib.net/api/search?${params}`);
     const results = JSON.parse(data);
     if (Array.isArray(results) && results.length > 0) {
       // Find item with closest duration or first synced
@@ -134,11 +142,99 @@ async function fetchLRCLib(title: string, artist: string, duration: number): Pro
   return null;
 }
 
+function findTimedLyricsData(node: any): any[] | null {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node.timedLyricsData)) return node.timedLyricsData;
+  for (const val of Object.values(node)) {
+    if (val && typeof val === 'object') {
+      const found = findTimedLyricsData(val);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findPlainDescriptionLyrics(node: any): string | null {
+  if (!node || typeof node !== 'object') return null;
+  if (node.musicDescriptionShelfRenderer?.description?.runs) {
+    return node.musicDescriptionShelfRenderer.description.runs.map((r: any) => r.text).join('').trim();
+  }
+  for (const val of Object.values(node)) {
+    if (val && typeof val === 'object') {
+      const found = findPlainDescriptionLyrics(val);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+async function fetchYouTubeMusicLyrics(videoId: string): Promise<LyricsResult | null> {
+  if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return null;
+
+  try {
+    const nextText = await httpFetchText('https://music.youtube.com/youtubei/v1/next?prettyPrint=false', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': ANDROID_MUSIC_UA },
+      body: JSON.stringify({ context: ANDROID_MUSIC_CONTEXT, videoId }),
+    });
+    const browseMatch = nextText.match(/"browseId":"(MPLYt_[^"]+)"/);
+    if (!browseMatch) return null;
+
+    const browseText = await httpFetchText('https://music.youtube.com/youtubei/v1/browse?prettyPrint=false', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'User-Agent': ANDROID_MUSIC_UA },
+      body: JSON.stringify({ context: ANDROID_MUSIC_CONTEXT, browseId: browseMatch[1] }),
+    });
+    const browseJson = JSON.parse(browseText);
+
+    const timed = findTimedLyricsData(browseJson);
+    if (timed && timed.length > 0) {
+      const synced: LyricLine[] = [];
+      const plainLines: string[] = [];
+      for (const entry of timed) {
+        const lineText = String(entry?.lyricLine ?? '').trim();
+        if (!lineText) continue;
+        plainLines.push(lineText);
+        const startMs = Number(entry?.cueRange?.startTimeMilliseconds);
+        if (Number.isFinite(startMs) && startMs >= 0) {
+          synced.push({ time: startMs / 1000, text: lineText });
+        }
+      }
+      if (synced.length > 0) {
+        return {
+          synced: synced.sort((a, b) => a.time - b.time),
+          plain: plainLines.join('\n'),
+          source: 'YouTube Music Synced',
+        };
+      }
+      if (plainLines.length > 0) {
+        return { synced: [], plain: plainLines.join('\n'), source: 'YouTube Music' };
+      }
+    }
+
+    const plainDesc = findPlainDescriptionLyrics(browseJson);
+    if (plainDesc) {
+      return { synced: [], plain: plainDesc, source: 'YouTube Music' };
+    }
+  } catch { /* fall through */ }
+
+  return null;
+}
+
 export function setupLyricsIPC() {
-  ipcMain.handle('lyrics:get', async (_e, title: string, artist: string, duration: number) => {
+  ipcMain.handle('lyrics:get', async (_e, title: string, artist: string, duration: number, videoId?: string) => {
     try {
-      const result = await fetchLRCLib(title, artist, duration);
-      if (result) return result;
+      const lrcResult = await fetchLRCLib(title, artist, duration);
+      if (lrcResult && lrcResult.synced.length > 0) return lrcResult;
+
+      if (videoId) {
+        const ytResult = await fetchYouTubeMusicLyrics(videoId);
+        if (ytResult && ytResult.synced.length > 0) return ytResult;
+        if (lrcResult) return lrcResult;
+        if (ytResult) return ytResult;
+      } else if (lrcResult) {
+        return lrcResult;
+      }
     } catch (err) {
       console.error('lyrics:get error', err);
     }

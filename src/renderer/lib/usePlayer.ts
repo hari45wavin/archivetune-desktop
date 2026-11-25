@@ -51,7 +51,7 @@ declare global {
         getMetadata: (path: string) => Promise<Track>;
       };
       lyrics: {
-        get: (title: string, artist: string, duration: number) => Promise<{
+        get: (title: string, artist: string, duration: number, videoId?: string) => Promise<{
           synced: Array<{ time: number; text: string }>;
           plain: string;
           source: string;

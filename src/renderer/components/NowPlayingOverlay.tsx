@@ -59,12 +59,14 @@ export default function NowPlayingOverlay() {
     sleepTimer,
     lyricsOffset,
     lyricsFontSize,
+    lyricsControlsMode,
     queue,
     setRepeat,
     toggleShuffle,
     setSleepTimer,
     setLyricsOffset,
     setLyricsFontSize,
+    setLyricsControlsMode,
   } = usePlayerStore();
 
   const { setShowNowPlaying } = useUIStore();
@@ -80,6 +82,7 @@ export default function NowPlayingOverlay() {
   } = usePlayer();
 
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
+  const [plainLyrics, setPlainLyrics] = useState('');
   const [lyricsSource, setLyricsSource] = useState('');
   const [showQueue, setShowQueue] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
@@ -101,11 +104,14 @@ export default function NowPlayingOverlay() {
   useEffect(() => {
     if (!currentTrack) return;
     setLyrics([]);
+    setPlainLyrics('');
     setLyricsSource('');
+    const videoId = currentTrack.source === 'youtube' ? currentTrack.id : undefined;
     window.electronAPI?.lyrics
-      .get(currentTrack.title, currentTrack.artist, currentTrack.duration)
+      .get(currentTrack.title, currentTrack.artist, currentTrack.duration, videoId)
       .then((res) => {
         setLyrics(res.synced || []);
+        setPlainLyrics(res.plain || '');
         setLyricsSource(res.source || '');
       })
       .catch(() => {});
@@ -432,52 +438,81 @@ export default function NowPlayingOverlay() {
 
           {!showQueue && (
             <div className="flex items-center gap-2 text-xs text-on-surface-variant">
-              {/* Lyrics Font Size */}
-              <div className="flex items-center bg-surface-container-high rounded-lg p-0.5">
-                {(['small', 'medium', 'large'] as const).map((sz) => (
+              {/* Lyrics Controls Visibility (Hide / Auto / Show) */}
+              <div className="flex items-center bg-surface-container-high rounded-lg p-0.5" title="Lyrics controls visibility">
+                {(['hide', 'auto', 'show'] as const).map((mode) => (
                   <button
-                    key={sz}
-                    onClick={() => setLyricsFontSize(sz)}
-                    className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded-md transition-colors ${
-                      lyricsFontSize === sz
+                    key={mode}
+                    onClick={() => setLyricsControlsMode(mode)}
+                    className={`px-2 py-0.5 text-[10px] capitalize font-semibold rounded-md transition-colors ${
+                      lyricsControlsMode === mode
                         ? 'bg-primary text-on-primary'
                         : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
-                    {sz[0]}
+                    {mode}
                   </button>
                 ))}
               </div>
 
-              {/* Lyrics Offset Adjuster */}
-              <div className="flex items-center gap-1 bg-surface-container-high rounded-lg px-2 py-0.5">
-                <button
-                  onClick={() => setLyricsOffset(lyricsOffset - 250)}
-                  className="hover:text-primary px-1 font-bold"
-                  title="Shift 250ms earlier"
-                >
-                  -
-                </button>
-                <span className="tabular-nums text-[11px] font-mono">
-                  {lyricsOffset > 0 ? `+${lyricsOffset}ms` : `${lyricsOffset}ms`}
-                </span>
-                <button
-                  onClick={() => setLyricsOffset(lyricsOffset + 250)}
-                  className="hover:text-primary px-1 font-bold"
-                  title="Shift 250ms later"
-                >
-                  +
-                </button>
-                {lyricsOffset !== 0 && (
-                  <button
-                    onClick={() => setLyricsOffset(0)}
-                    className="hover:text-primary ml-1"
-                    title="Reset offset to 0ms"
+              {lyricsControlsMode !== 'hide' && (
+                <>
+                  {/* Lyrics Font Size */}
+                  <div
+                    className={`flex items-center bg-surface-container-high rounded-lg p-0.5 transition-opacity ${
+                      lyricsControlsMode === 'auto' ? 'opacity-40 hover:opacity-100' : ''
+                    }`}
                   >
-                    <RotateCcw size={11} />
-                  </button>
-                )}
-              </div>
+                    {(['small', 'medium', 'large'] as const).map((sz) => (
+                      <button
+                        key={sz}
+                        onClick={() => setLyricsFontSize(sz)}
+                        className={`px-2 py-0.5 text-[10px] uppercase font-bold rounded-md transition-colors ${
+                          lyricsFontSize === sz
+                            ? 'bg-primary text-on-primary'
+                            : 'text-on-surface-variant hover:text-on-surface'
+                        }`}
+                      >
+                        {sz[0]}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Lyrics Offset Adjuster */}
+                  <div
+                    className={`flex items-center gap-1 bg-surface-container-high rounded-lg px-2 py-0.5 transition-opacity ${
+                      lyricsControlsMode === 'auto' ? 'opacity-40 hover:opacity-100' : ''
+                    }`}
+                  >
+                    <button
+                      onClick={() => setLyricsOffset(lyricsOffset - 250)}
+                      className="hover:text-primary px-1 font-bold"
+                      title="Shift 250ms earlier"
+                    >
+                      -
+                    </button>
+                    <span className="tabular-nums text-[11px] font-mono">
+                      {lyricsOffset > 0 ? `+${lyricsOffset}ms` : `${lyricsOffset}ms`}
+                    </span>
+                    <button
+                      onClick={() => setLyricsOffset(lyricsOffset + 250)}
+                      className="hover:text-primary px-1 font-bold"
+                      title="Shift 250ms later"
+                    >
+                      +
+                    </button>
+                    {lyricsOffset !== 0 && (
+                      <button
+                        onClick={() => setLyricsOffset(0)}
+                        className="hover:text-primary ml-1"
+                        title="Reset offset to 0ms"
+                      >
+                        <RotateCcw size={11} />
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -509,11 +544,22 @@ export default function NowPlayingOverlay() {
                   </div>
                 )}
               </div>
+            ) : plainLyrics ? (
+              <div className="py-8 px-3 space-y-3">
+                <p className={`${fontSizes[lyricsFontSize]} text-on-surface-variant whitespace-pre-line leading-relaxed`}>
+                  {plainLyrics}
+                </p>
+                {lyricsSource && (
+                  <div className="text-[11px] text-on-surface-variant/60 pt-4 text-center italic">
+                    Lyrics provided via {lyricsSource}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="flex-1 h-full flex flex-col items-center justify-center text-on-surface-variant gap-2">
                 <Music2 size={36} className="text-primary/40" />
-                <p className="text-sm">No synced lyrics found for this track</p>
-                <p className="text-xs text-on-surface-variant/60">Searching LRCLib & YouTube Music</p>
+                <p className="text-sm">No lyrics found for this track</p>
+                <p className="text-xs text-on-surface-variant/60">Checked LRCLib & YouTube Music</p>
               </div>
             )}
           </div>
