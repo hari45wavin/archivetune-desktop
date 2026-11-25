@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, net } from 'electron';
 import dns from 'dns';
 import os from 'os';
 import path from 'path';
@@ -224,6 +224,30 @@ app.whenReady().then(() => {
   // Open external URL in default browser
   ipcMain.on('shell:openExternal', (_event, url: string) => {
     shell.openExternal(url);
+  });
+
+  // Check GitHub Releases for updates
+  ipcMain.handle('app:checkUpdates', async () => {
+    const currentVersion = app.getVersion();
+    try {
+      const res = await net.fetch(
+        'https://api.github.com/repos/hari45wavin/archivetune-desktop/releases/latest',
+        { headers: { 'User-Agent': `ArchiveTune-Desktop/${currentVersion}` } }
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const release: any = await res.json();
+      const latestTag = String(release?.tag_name || '').replace(/^v/i, '');
+      const hasUpdate = Boolean(latestTag && latestTag !== currentVersion);
+      return {
+        ok: true,
+        currentVersion,
+        latestVersion: latestTag || currentVersion,
+        hasUpdate,
+        url: release?.html_url || 'https://github.com/hari45wavin/archivetune-desktop/releases',
+      };
+    } catch (err: any) {
+      return { ok: false, currentVersion, error: err?.message || String(err) };
+    }
   });
 
   app.on('activate', () => {

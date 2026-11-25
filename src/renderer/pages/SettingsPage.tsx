@@ -48,6 +48,39 @@ export default function SettingsPage() {
   const [apiSecret, setApiSecret] = useState('');
   const [sessionKey, setSessionKey] = useState('');
   const [scrobbleStatus, setScrobbleStatus] = useState<string | null>(null);
+  const [lbToken, setLbToken] = useState('');
+  const [lbStatus, setLbStatus] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<{
+    checking: boolean;
+    text?: string;
+    url?: string;
+  }>({ checking: false });
+
+  const handleSaveListenBrainz = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await window.electronAPI?.scrobble.configureListenBrainz(lbToken);
+    if (res?.ok) {
+      setLbStatus(lbToken.trim() ? 'ListenBrainz token saved!' : 'ListenBrainz disabled.');
+    }
+  };
+
+  const handleCheckUpdates = async () => {
+    setUpdateStatus({ checking: true });
+    const res = await window.electronAPI?.checkUpdates();
+    if (!res?.ok) {
+      setUpdateStatus({ checking: false, text: `Update check failed: ${res?.error || 'network error'}` });
+      return;
+    }
+    if (res.hasUpdate) {
+      setUpdateStatus({
+        checking: false,
+        text: `Update available: v${res.latestVersion} (current v${res.currentVersion})`,
+        url: res.url,
+      });
+    } else {
+      setUpdateStatus({ checking: false, text: `You're up to date (v${res.currentVersion})` });
+    }
+  };
 
   const handleSaveScrobble = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -337,26 +370,26 @@ export default function SettingsPage() {
           <Disc3 className="text-primary" size={22} />
           <div>
             <h2 className="text-base font-semibold text-on-surface">Audio Engine Architecture</h2>
-            <p className="text-xs text-on-surface-variant">Configured for low-latency native Linux playback</p>
+            <p className="text-xs text-on-surface-variant">Cross-platform Linux & Windows playback pipeline</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
           <div className="p-3 rounded-xl bg-surface-container-high flex flex-col gap-1">
             <span className="text-xs text-on-surface-variant">Backend Engine</span>
-            <span className="font-medium text-on-surface">mpv (Bidirectional JSON IPC Socket)</span>
+            <span className="font-medium text-on-surface">mpv IPC (UNIX / Named Pipes) + HTML5 Fallback</span>
           </div>
           <div className="p-3 rounded-xl bg-surface-container-high flex flex-col gap-1">
             <span className="text-xs text-on-surface-variant">Stream Resolver</span>
-            <span className="font-medium text-on-surface">yt-dlp (Opus / WebM 160kbps+)</span>
+            <span className="font-medium text-on-surface">InnerTube (VPN-Aware) + Bundled yt-dlp</span>
           </div>
           <div className="p-3 rounded-xl bg-surface-container-high flex flex-col gap-1">
-            <span className="text-xs text-on-surface-variant">Gapless Playback</span>
-            <span className="font-medium text-on-surface">Enabled (--gapless-audio=yes)</span>
+            <span className="text-xs text-on-surface-variant">Gapless & Crossfade</span>
+            <span className="font-medium text-on-surface">Enabled (0–20s Dual-Audio & mpv)</span>
           </div>
           <div className="p-3 rounded-xl bg-surface-container-high flex flex-col gap-1">
             <span className="text-xs text-on-surface-variant">Lyrics Engine</span>
-            <span className="font-medium text-on-surface">LRCLib API (Fuzzy & Exact Synced Matching)</span>
+            <span className="font-medium text-on-surface">LRCLib + YouTube Music Synced Waterfall</span>
           </div>
         </div>
       </section>
@@ -438,15 +471,66 @@ export default function SettingsPage() {
         </form>
       </section>
 
-      {/* About */}
-      <section className="bg-surface-container rounded-2xl p-5 space-y-3 border border-outline-variant/30">
+      {/* ListenBrainz Scrobbler */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-4 border border-outline-variant/30">
         <div className="flex items-center gap-3">
-          <Info className="text-primary" size={22} />
+          <Radio className="text-primary" size={22} />
           <div>
-            <h2 className="text-base font-semibold text-on-surface">About ArchiveTune Desktop</h2>
-            <p className="text-xs text-on-surface-variant">Version 1.1.0 Desktop Client</p>
+            <h2 className="text-base font-semibold text-on-surface">ListenBrainz Scrobbler</h2>
+            <p className="text-xs text-on-surface-variant">Submit playing-now & listens via your ListenBrainz user token</p>
           </div>
         </div>
+
+        <form onSubmit={handleSaveListenBrainz} className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="password"
+            value={lbToken}
+            onChange={(e) => setLbToken(e.target.value)}
+            placeholder="ListenBrainz User Token"
+            className="flex-1 px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+          >
+            Save Token
+          </button>
+        </form>
+        {lbStatus && <p className="text-xs text-primary">{lbStatus}</p>}
+      </section>
+
+      {/* About & Updates */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-3 border border-outline-variant/30">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Info className="text-primary" size={22} />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface">About ArchiveTune Desktop</h2>
+              <p className="text-xs text-on-surface-variant">Version 1.1.0 Desktop Client</p>
+            </div>
+          </div>
+          <button
+            onClick={handleCheckUpdates}
+            disabled={updateStatus.checking}
+            className="px-3.5 py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors disabled:opacity-50"
+          >
+            {updateStatus.checking ? 'Checking...' : 'Check for Updates'}
+          </button>
+        </div>
+
+        {updateStatus.text && (
+          <div className="flex items-center gap-3 text-xs text-primary bg-primary/10 px-3 py-2 rounded-xl">
+            <span>{updateStatus.text}</span>
+            {updateStatus.url && (
+              <button
+                onClick={() => window.electronAPI?.openExternal(updateStatus.url!)}
+                className="underline font-semibold"
+              >
+                Download Update
+              </button>
+            )}
+          </div>
+        )}
 
         <p className="text-sm text-on-surface-variant leading-relaxed">
           ArchiveTune Desktop is an open-source cross-platform music client for Linux and Windows replicating the features of ArchiveTune

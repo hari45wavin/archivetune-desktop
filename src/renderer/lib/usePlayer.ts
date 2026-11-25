@@ -60,6 +60,7 @@ declare global {
       };
       scrobble: {
         configure: (apiKey: string, apiSecret: string, sessionKey: string) => Promise<{ ok: boolean }>;
+        configureListenBrainz: (token: string) => Promise<{ ok: boolean }>;
         updateNowPlaying: (track: object) => Promise<{ ok: boolean }>;
         scrobble: (track: object) => Promise<{ ok: boolean }>;
       };
@@ -97,6 +98,14 @@ declare global {
       minimize: () => void;
       maximize: () => void;
       close: () => void;
+      checkUpdates: () => Promise<{
+        ok: boolean;
+        currentVersion: string;
+        latestVersion?: string;
+        hasUpdate?: boolean;
+        url?: string;
+        error?: string;
+      }>;
       openExternal: (url: string) => void;
       onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => () => void;
     };

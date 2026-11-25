@@ -74,10 +74,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('lyrics:get', title, artist, duration, videoId),
   },
 
-  // Scrobbling
+  // Scrobbling (Last.fm & ListenBrainz)
   scrobble: {
     configure: (apiKey: string, apiSecret: string, sessionKey: string) =>
       ipcRenderer.invoke('scrobble:configure', apiKey, apiSecret, sessionKey),
+    configureListenBrainz: (token: string) =>
+      ipcRenderer.invoke('scrobble:configureListenBrainz', token),
     updateNowPlaying: (track: object) => ipcRenderer.invoke('scrobble:nowPlaying', track),
     scrobble: (track: object) => ipcRenderer.invoke('scrobble:scrobble', track),
   },
@@ -106,7 +108,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportM3U: (playlistId: string) => ipcRenderer.invoke('storage:exportM3U', playlistId),
   },
 
-  // Shell & Tray
+  // Shell, Updates & Tray
+  checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
   onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => {
     const handler = (_e: any, action: 'toggle' | 'prev' | 'next') => cb(action);
