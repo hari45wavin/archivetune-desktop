@@ -1,5 +1,16 @@
 import { create } from 'zustand';
 
+export const EQ_BAND_LABELS = ['60Hz', '230Hz', '910Hz', '3.6kHz', '14kHz'] as const;
+
+export const EQ_PRESETS: Record<string, number[]> = {
+  Flat: [0, 0, 0, 0, 0],
+  'Bass Boost': [6, 4, 0, -1, 0],
+  Vocal: [-2, -1, 4, 4, 1],
+  Treble: [-1, 0, 1, 4, 6],
+  Rock: [5, 2, -1, 3, 5],
+  Electronic: [5, 3, 0, 2, 5],
+};
+
 export interface Track {
   id: string;
   title: string;
@@ -33,6 +44,8 @@ interface PlayerState {
   lyricsFontSize: 'small' | 'medium' | 'large';
   lyricsControlsMode: 'hide' | 'auto' | 'show';
   sponsorBlockEnabled: boolean;
+  eqPreset: string;
+  eqBands: number[];
 
   // Actions
   setCurrentTrack: (track: Track) => void;
@@ -57,6 +70,7 @@ interface PlayerState {
   setLyricsFontSize: (size: 'small' | 'medium' | 'large') => void;
   setLyricsControlsMode: (mode: 'hide' | 'auto' | 'show') => void;
   setSponsorBlockEnabled: (enabled: boolean) => void;
+  setEqualizer: (bands: number[], preset?: string) => void;
   addToHistory: (track: Track) => void;
   nextTrack: () => Track | null;
   prevTrack: () => Track | null;
@@ -84,6 +98,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   lyricsFontSize: 'medium',
   lyricsControlsMode: 'show',
   sponsorBlockEnabled: true,
+  eqPreset: 'Flat',
+  eqBands: [0, 0, 0, 0, 0],
 
   setCurrentTrack: (track) => {
     set({ currentTrack: track });
@@ -148,6 +164,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setLyricsFontSize: (lyricsFontSize) => set({ lyricsFontSize }),
   setLyricsControlsMode: (lyricsControlsMode) => set({ lyricsControlsMode }),
   setSponsorBlockEnabled: (sponsorBlockEnabled) => set({ sponsorBlockEnabled }),
+  setEqualizer: (eqBands, preset) =>
+    set({
+      eqBands: eqBands.slice(0, 5),
+      eqPreset: preset || 'Custom',
+    }),
   addToHistory: (track) =>
     set((s) => {
       const filtered = s.history.filter((t) => t.id !== track.id);

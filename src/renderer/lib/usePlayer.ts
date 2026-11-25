@@ -20,6 +20,7 @@ declare global {
         setVolume: (vol: number) => Promise<void>;
         setSpeed: (speed: number) => Promise<{ ok: boolean }>;
         setNormalization: (enabled: boolean) => Promise<{ ok: boolean }>;
+        setEqualizer: (gains: number[]) => Promise<{ ok: boolean }>;
         downloadTrack: (track: object) => Promise<{ ok: boolean; path?: string; error?: string }>;
         getStatus: () => Promise<{ isPlaying: boolean; position: number; duration: number }>;
         onProgress: (cb: (info: { position: number; duration: number; isPlaying: boolean }) => void) => () => void;
@@ -75,11 +76,44 @@ declare global {
 }
 
 let fallbackAudio: HTMLAudioElement | null = null;
+let incomingAudio: HTMLAudioElement | null = null;
+let crossfadeTimer: ReturnType<typeof setInterval> | null = null;
+let crossfadeTriggeredForId: string | null = null;
 let usingHtml5Fallback = false;
 let playbackStartTimestamp = 0;
 let fallbackEndedHandler: (() => void) | null = null;
 let activeSkipSegments: Array<{ start: number; end: number; category: string }> = [];
 let lastSkippedEnd = -1;
+
+async function resolveTrackStream(track: Track): Promise<{ url: string; ytVideoId: string | null }> {
+  const api = window.electronAPI;
+  if (!api) throw new Error('Electron API unavailable');
+
+  if (track.source === 'local' && track.path) {
+    return { url: `file://${track.path.replace(/\\/g, '/')}`, ytVideoId: null };
+  }
+  if (track.source === 'spotify') {
+    const resolved = await api.spotify.resolveTrack({ title: track.title, artist: track.artist });
+    if (!resolved.url) throw new Error('Could not resolve Spotify audio stream');
+    return { url: resolved.url, ytVideoId: resolved.id };
+  }
+  const res = await api.ytmusic.getStreamUrl(track.id);
+  if (!res.ok || !res.url) throw new Error(res.error ?? 'No stream URL');
+  return { url: res.url, ytVideoId: track.id };
+}
+
+function clearHtml5Crossfade() {
+  if (crossfadeTimer) {
+    clearInterval(crossfadeTimer);
+    crossfadeTimer = null;
+  }
+  if (incomingAudio) {
+    incomingAudio.pause();
+    incomingAudio.removeAttribute('src');
+    incomingAudio.load();
+    incomingAudio = null;
+  }
+}
 
 function maybeSkipSponsorSegment(pos: number, seekFn: (sec: number) => void) {
   if (!usePlayerStore.getState().sponsorBlockEnabled || activeSkipSegments.length === 0) return;
@@ -92,40 +126,124 @@ function maybeSkipSponsorSegment(pos: number, seekFn: (sec: number) => void) {
   }
 }
 
+function attachFallbackListeners(audio: HTMLAudioElement) {
+  audio.ontimeupdate = () => {
+    if (!usingHtml5Fallback || fallbackAudio !== audio) return;
+    const store = usePlayerStore.getState();
+    const pos = audio.currentTime || 0;
+    const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : store.duration;
+    store.setPosition(pos);
+    if (dur > 0 && dur !== store.duration) {
+      store.setDuration(dur);
+    }
+
+    maybeSkipSponsorSegment(pos, (target) => {
+      audio.currentTime = target;
+    });
+
+    // Dual-element HTML5 crossfade for Windows/portable runs without mpv
+    const cfSec = store.crossfade;
+    const activeTrack = store.currentTrack;
+    if (
+      cfSec > 0 &&
+      activeTrack &&
+      store.repeat !== 'one' &&
+      dur > cfSec + 3 &&
+      pos >= dur - cfSec &&
+      crossfadeTriggeredForId !== activeTrack.id &&
+      !crossfadeTimer
+    ) {
+      crossfadeTriggeredForId = activeTrack.id;
+      void startHtml5Crossfade(cfSec);
+    }
+  };
+
+  audio.onloadedmetadata = () => {
+    if (!usingHtml5Fallback || fallbackAudio !== audio) return;
+    if (Number.isFinite(audio.duration) && audio.duration > 0) {
+      usePlayerStore.getState().setDuration(audio.duration);
+    }
+  };
+
+  audio.onended = () => {
+    if (!usingHtml5Fallback || fallbackAudio !== audio || crossfadeTimer) return;
+    fallbackEndedHandler?.();
+  };
+}
+
+async function startHtml5Crossfade(crossfadeSec: number) {
+  const store = usePlayerStore.getState();
+  const next = store.nextTrack();
+  if (!next || !fallbackAudio) return;
+
+  try {
+    const { url, ytVideoId } = await resolveTrackStream(next);
+    if (!usingHtml5Fallback || !fallbackAudio) return;
+
+    const outgoing = fallbackAudio;
+    const targetVol = Math.max(0, Math.min(1, usePlayerStore.getState().volume));
+    const nextEl = new Audio(url);
+    nextEl.preload = 'auto';
+    nextEl.volume = 0;
+    nextEl.playbackRate = usePlayerStore.getState().speed || 1;
+    incomingAudio = nextEl;
+    await nextEl.play();
+
+    // Update UI/metadata immediately as incoming track fades in
+    usePlayerStore.getState().setCurrentTrack(next);
+    usePlayerStore.getState().setPosition(0);
+    playbackStartTimestamp = Math.floor(Date.now() / 1000);
+    activeSkipSegments = [];
+    lastSkippedEnd = -1;
+    if (ytVideoId && usePlayerStore.getState().sponsorBlockEnabled) {
+      window.electronAPI?.sponsorblock
+        ?.getSegments(ytVideoId)
+        .then((segs) => {
+          if (usePlayerStore.getState().currentTrack?.id === next.id) {
+            activeSkipSegments = segs || [];
+          }
+        })
+        .catch(() => {});
+    }
+
+    const totalMs = Math.max(500, crossfadeSec * 1000);
+    const startTime = Date.now();
+    crossfadeTimer = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const t = Math.min(1, elapsed / totalMs);
+      const volNow = Math.max(0, Math.min(1, usePlayerStore.getState().volume));
+      outgoing.volume = Math.max(0, volNow * (1 - t));
+      nextEl.volume = Math.min(volNow, volNow * t);
+
+      if (t >= 1) {
+        if (crossfadeTimer) clearInterval(crossfadeTimer);
+        crossfadeTimer = null;
+        outgoing.pause();
+        outgoing.removeAttribute('src');
+        outgoing.load();
+        fallbackAudio = nextEl;
+        incomingAudio = null;
+        nextEl.volume = targetVol;
+        attachFallbackListeners(nextEl);
+      }
+    }, 80);
+  } catch {
+    clearHtml5Crossfade();
+  }
+}
+
 function getFallbackAudio(): HTMLAudioElement {
   if (!fallbackAudio) {
     fallbackAudio = new Audio();
     fallbackAudio.preload = 'auto';
-
-    fallbackAudio.addEventListener('timeupdate', () => {
-      if (!usingHtml5Fallback || !fallbackAudio) return;
-      const store = usePlayerStore.getState();
-      const pos = fallbackAudio.currentTime || 0;
-      store.setPosition(pos);
-      if (Number.isFinite(fallbackAudio.duration) && fallbackAudio.duration > 0) {
-        store.setDuration(fallbackAudio.duration);
-      }
-      maybeSkipSponsorSegment(pos, (target) => {
-        if (fallbackAudio) fallbackAudio.currentTime = target;
-      });
-    });
-
-    fallbackAudio.addEventListener('loadedmetadata', () => {
-      if (!usingHtml5Fallback || !fallbackAudio) return;
-      if (Number.isFinite(fallbackAudio.duration) && fallbackAudio.duration > 0) {
-        usePlayerStore.getState().setDuration(fallbackAudio.duration);
-      }
-    });
-
-    fallbackAudio.addEventListener('ended', () => {
-      if (!usingHtml5Fallback) return;
-      fallbackEndedHandler?.();
-    });
+    attachFallbackListeners(fallbackAudio);
   }
   return fallbackAudio;
 }
 
 function stopFallbackAudio() {
+  clearHtml5Crossfade();
+  crossfadeTriggeredForId = null;
   if (fallbackAudio) {
     fallbackAudio.pause();
     fallbackAudio.removeAttribute('src');
@@ -154,21 +272,9 @@ export function usePlayer() {
     try {
       activeSkipSegments = [];
       lastSkippedEnd = -1;
-      let url: string;
-      let ytVideoId: string | null = null;
-      if (track.source === 'local' && track.path) {
-        url = `file://${track.path.replace(/\\/g, '/')}`;
-      } else if (track.source === 'spotify') {
-        const resolved = await api.spotify.resolveTrack({ title: track.title, artist: track.artist });
-        if (!resolved.url) throw new Error('Could not resolve Spotify audio stream');
-        url = resolved.url;
-        ytVideoId = resolved.id;
-      } else {
-        const res = await api.ytmusic.getStreamUrl(track.id);
-        if (!res.ok || !res.url) throw new Error(res.error ?? 'No stream URL');
-        url = res.url;
-        ytVideoId = track.id;
-      }
+      crossfadeTriggeredForId = null;
+      clearHtml5Crossfade();
+      const { url, ytVideoId } = await resolveTrackStream(track);
 
       if (ytVideoId && usePlayerStore.getState().sponsorBlockEnabled) {
         api.sponsorblock
@@ -187,16 +293,22 @@ export function usePlayer() {
         album: track.album ?? '',
       });
 
+      const storeSnapshot = usePlayerStore.getState();
       if (playRes?.ok) {
         stopFallbackAudio();
         await api.player.setVolume(volume);
+        if (storeSnapshot.speed !== 1.0) await api.player.setSpeed(storeSnapshot.speed);
+        if (storeSnapshot.normalization) await api.player.setNormalization(true);
+        if (storeSnapshot.eqBands.some((b) => Math.abs(b) >= 0.5)) {
+          await api.player.setEqualizer(storeSnapshot.eqBands);
+        }
       } else {
         // Fallback to Chromium HTML5 Audio when mpv isn't available on host
         usingHtml5Fallback = true;
         const audio = getFallbackAudio();
         audio.src = url;
         audio.volume = Math.max(0, Math.min(1, volume));
-        audio.playbackRate = usePlayerStore.getState().speed || 1;
+        audio.playbackRate = storeSnapshot.speed || 1;
         await audio.play();
       }
 
@@ -275,6 +387,13 @@ export function usePlayer() {
     }
   }, []);
 
+  const changeEq = useCallback(async (bands: number[], preset?: string) => {
+    usePlayerStore.getState().setEqualizer(bands, preset);
+    if (!usingHtml5Fallback) {
+      await window.electronAPI?.player.setEqualizer(bands);
+    }
+  }, []);
+
   const downloadCurrentTrack = useCallback(async (track?: Track) => {
     const target = track || currentTrack;
     if (!target) return { ok: false, error: 'No track selected' };
@@ -320,6 +439,7 @@ export function usePlayer() {
     skipPrev,
     changeSpeed,
     toggleNormalization,
+    changeEq,
     downloadCurrentTrack,
   };
 }

@@ -29,6 +29,27 @@ let currentDuration = 0;
 let isPlaying = false;
 let progressInterval: NodeJS.Timeout | null = null;
 let socketBuffer = '';
+let normEnabled = false;
+let eqGains: number[] = [0, 0, 0, 0, 0];
+const EQ_FREQS = [60, 230, 910, 3600, 14000];
+
+async function applyMpvAudioFilters() {
+  const filters: string[] = [];
+  eqGains.forEach((gain, idx) => {
+    if (Math.abs(gain) >= 0.5 && EQ_FREQS[idx]) {
+      const clamped = Math.max(-12, Math.min(12, gain));
+      filters.push(`equalizer=f=${EQ_FREQS[idx]}:t=q:w=1.2:g=${clamped}`);
+    }
+  });
+  if (normEnabled) {
+    filters.push('dynaudnorm=f=500:g=31:p=0.95:m=10.0:r=0.9');
+  }
+  if (filters.length > 0) {
+    await sendMpvCommand({ command: ['af', 'set', `lavfi=[${filters.join(',')}]`] });
+  } else {
+    await sendMpvCommand({ command: ['af', 'clr', ''] });
+  }
+}
 
 function cleanupSocketFile() {
   if (!isWindows && fs.existsSync(SOCKET_PATH)) {
@@ -305,12 +326,21 @@ export function setupPlayerIPC() {
   });
 
   ipcMain.handle('player:setNormalization', async (_e, enabled: boolean) => {
+    normEnabled = !!enabled;
     try {
-      if (enabled) {
-        await sendMpvCommand({ command: ['af', 'set', 'lavfi=[dynaudnorm=f=500:g=31:p=0.95:m=10.0:r=0.9]'] });
-      } else {
-        await sendMpvCommand({ command: ['af', 'clr', ''] });
-      }
+      await applyMpvAudioFilters();
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  ipcMain.handle('player:setEqualizer', async (_e, gains: number[]) => {
+    if (Array.isArray(gains) && gains.length === 5) {
+      eqGains = gains.map((g) => (Number.isFinite(g) ? Math.max(-12, Math.min(12, g)) : 0));
+    }
+    try {
+      await applyMpvAudioFilters();
       return { ok: true };
     } catch {
       return { ok: false };

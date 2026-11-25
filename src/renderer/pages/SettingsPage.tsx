@@ -12,7 +12,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useUIStore, usePlayerStore } from '../store';
+import { useUIStore, usePlayerStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
 import { usePlayer } from '../lib/usePlayer';
 
 const SEED_COLORS = [
@@ -37,8 +37,10 @@ export default function SettingsPage() {
     setLyricsOffset,
     sponsorBlockEnabled,
     setSponsorBlockEnabled,
+    eqPreset,
+    eqBands,
   } = usePlayerStore();
-  const { toggleNormalization } = usePlayer();
+  const { toggleNormalization, changeEq } = usePlayer();
 
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
@@ -243,6 +245,66 @@ export default function SettingsPage() {
               />
             </button>
           </div>
+        </div>
+      </section>
+
+      {/* 5-Band Graphic Equalizer */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-4 border border-outline-variant/30">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-3">
+            <Sliders className="text-primary" size={22} />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface">Graphic Equalizer</h2>
+              <p className="text-xs text-on-surface-variant">5-band frequency tuning (active via mpv audio filter)</p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-primary bg-primary/10 px-2.5 py-1 rounded-full">
+            {eqPreset}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(EQ_PRESETS).map(([name, bands]) => (
+            <button
+              key={name}
+              onClick={() => changeEq(bands, name)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                eqPreset === name
+                  ? 'bg-primary text-on-primary'
+                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
+              }`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-5 gap-3 pt-2">
+          {EQ_BAND_LABELS.map((label, idx) => {
+            const val = eqBands[idx] ?? 0;
+            return (
+              <div key={label} className="flex flex-col items-center gap-2 p-3 rounded-xl bg-surface-container-high">
+                <span className="text-[11px] font-mono font-semibold text-primary tabular-nums">
+                  {val > 0 ? `+${val}dB` : `${val}dB`}
+                </span>
+                <input
+                  type="range"
+                  min={-12}
+                  max={12}
+                  step={1}
+                  value={val}
+                  onChange={(e) => {
+                    const next = [...eqBands];
+                    next[idx] = parseInt(e.target.value, 10);
+                    changeEq(next, 'Custom');
+                  }}
+                  className="w-full accent-primary cursor-pointer"
+                  aria-label={`${label} band`}
+                />
+                <span className="text-[11px] font-medium text-on-surface-variant">{label}</span>
+              </div>
+            );
+          })}
         </div>
       </section>
 
