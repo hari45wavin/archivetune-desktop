@@ -101,6 +101,11 @@ declare global {
         exportM3U: (playlistId: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
         importM3U: () => Promise<{ ok: boolean; playlists?: CustomPlaylist[]; importedCount?: number }>;
       };
+      ai: {
+        getConfig: () => Promise<{ configured: boolean; provider: 'openai' | 'openrouter' | 'gemini'; model: string; targetLanguage: string }>;
+        configure: (input: { provider: 'openai' | 'openrouter' | 'gemini'; apiKey?: string; model?: string; targetLanguage?: string }) => Promise<{ ok: boolean; configured: boolean }>;
+        translateLyrics: (lines: string[], targetLanguage?: string) => Promise<{ ok: boolean; translated?: string[]; language?: string; error?: string }>;
+      };
       minimize: () => void;
       maximize: () => void;
       close: () => void;

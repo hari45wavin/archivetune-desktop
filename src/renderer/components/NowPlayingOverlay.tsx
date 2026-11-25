@@ -20,6 +20,7 @@ import {
   Music2,
   Sparkles,
   Radio,
+  Languages,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePlayerStore, useUIStore } from '../store';
@@ -85,6 +86,9 @@ export default function NowPlayingOverlay() {
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
   const [plainLyrics, setPlainLyrics] = useState('');
   const [lyricsSource, setLyricsSource] = useState('');
+  const [translatedLines, setTranslatedLines] = useState<string[] | null>(null);
+  const [translating, setTranslating] = useState(false);
+  const [translateErr, setTranslateErr] = useState<string | null>(null);
   const [showQueue, setShowQueue] = useState(false);
   const [showSleepMenu, setShowSleepMenu] = useState(false);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
@@ -107,6 +111,8 @@ export default function NowPlayingOverlay() {
     setLyrics([]);
     setPlainLyrics('');
     setLyricsSource('');
+    setTranslatedLines(null);
+    setTranslateErr(null);
     const videoId = currentTrack.source === 'youtube' ? currentTrack.id : undefined;
     window.electronAPI?.lyrics
       .get(currentTrack.title, currentTrack.artist, currentTrack.duration, videoId)
@@ -124,6 +130,28 @@ export default function NowPlayingOverlay() {
       activeLyricRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [activeIndex]);
+
+  const handleTranslateLyrics = async () => {
+    if (translatedLines) {
+      setTranslatedLines(null);
+      setTranslateErr(null);
+      return;
+    }
+    const sourceLines = lyrics.length > 0 ? lyrics.map((l) => l.text) : plainLyrics.split('\n').filter(Boolean);
+    if (sourceLines.length === 0 || translating) return;
+    setTranslating(true);
+    setTranslateErr(null);
+    try {
+      const res = await window.electronAPI?.ai?.translateLyrics(sourceLines);
+      if (res?.ok && res.translated) {
+        setTranslatedLines(res.translated);
+      } else {
+        setTranslateErr(res?.error || 'Translation failed');
+      }
+    } finally {
+      setTranslating(false);
+    }
+  };
 
   const nextRepeat = () => {
     const modes: Array<'none' | 'one' | 'all'> = ['none', 'all', 'one'];
@@ -439,6 +467,21 @@ export default function NowPlayingOverlay() {
 
           {!showQueue && (
             <div className="flex items-center gap-2 text-xs text-on-surface-variant">
+              {(lyrics.length > 0 || plainLyrics) && (
+                <button
+                  onClick={handleTranslateLyrics}
+                  disabled={translating}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                    translatedLines
+                      ? 'bg-primary text-on-primary'
+                      : 'bg-surface-container-high hover:text-primary'
+                  }`}
+                  title="Translate lyrics via configured AI key"
+                >
+                  <Languages size={12} />
+                  <span>{translating ? '...' : translatedLines ? 'Original' : 'Translate'}</span>
+                </button>
+              )}
               {/* Lyrics Controls Visibility (Hide / Auto / Show) */}
               <div className="flex items-center bg-surface-container-high rounded-lg p-0.5" title="Lyrics controls visibility">
                 {(['hide', 'auto', 'show'] as const).map((mode) => (
@@ -521,6 +564,11 @@ export default function NowPlayingOverlay() {
         {/* Content area: Lyrics */}
         {!showQueue && (
           <div ref={lyricsRef} className="flex-1 overflow-y-auto lyrics-container pr-2">
+            {translateErr && (
+              <div className="mb-3 px-3 py-2 rounded-xl bg-error-container text-on-error-container text-xs">
+                {translateErr}
+              </div>
+            )}
             {lyrics.length > 0 ? (
               <div className="space-y-4 py-8">
                 {lyrics.map((line, i) => (
@@ -536,7 +584,12 @@ export default function NowPlayingOverlay() {
                         : `${fontSizes[lyricsFontSize]} text-on-surface-variant hover:text-on-surface`
                     }`}
                   >
-                    {line.text}
+                    <div>{line.text}</div>
+                    {translatedLines?.[i] && (
+                      <div className="text-xs font-normal text-on-surface-variant/80 mt-0.5">
+                        {translatedLines[i]}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {lyricsSource && (
@@ -548,7 +601,7 @@ export default function NowPlayingOverlay() {
             ) : plainLyrics ? (
               <div className="py-8 px-3 space-y-3">
                 <p className={`${fontSizes[lyricsFontSize]} text-on-surface-variant whitespace-pre-line leading-relaxed`}>
-                  {plainLyrics}
+                  {translatedLines ? translatedLines.join('\n') : plainLyrics}
                 </p>
                 {lyricsSource && (
                   <div className="text-[11px] text-on-surface-variant/60 pt-4 text-center italic">

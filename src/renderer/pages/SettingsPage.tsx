@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Palette,
   Radio,
@@ -10,6 +10,7 @@ import {
   Sparkles,
   FolderDown,
   Clock,
+  Languages,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useUIStore, usePlayerStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
@@ -50,11 +51,43 @@ export default function SettingsPage() {
   const [scrobbleStatus, setScrobbleStatus] = useState<string | null>(null);
   const [lbToken, setLbToken] = useState('');
   const [lbStatus, setLbStatus] = useState<string | null>(null);
+  const [aiProvider, setAiProvider] = useState<'openai' | 'openrouter' | 'gemini'>('openai');
+  const [aiModel, setAiModel] = useState('gpt-4o-mini');
+  const [aiLanguage, setAiLanguage] = useState('English');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<{
     checking: boolean;
     text?: string;
     url?: string;
   }>({ checking: false });
+
+  useEffect(() => {
+    window.electronAPI?.ai
+      ?.getConfig()
+      .then((cfg) => {
+        if (!cfg) return;
+        setAiProvider(cfg.provider);
+        setAiModel(cfg.model);
+        setAiLanguage(cfg.targetLanguage);
+        if (cfg.configured) setAiStatus('API key configured');
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveAI = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await window.electronAPI?.ai?.configure({
+      provider: aiProvider,
+      apiKey: aiApiKey,
+      model: aiModel,
+      targetLanguage: aiLanguage,
+    });
+    if (res?.ok) {
+      setAiApiKey('');
+      setAiStatus(res.configured ? 'AI translation settings saved!' : 'Saved (add an API key to translate)');
+    }
+  };
 
   const handleSaveListenBrainz = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -497,6 +530,70 @@ export default function SettingsPage() {
           </button>
         </form>
         {lbStatus && <p className="text-xs text-primary">{lbStatus}</p>}
+      </section>
+
+      {/* AI Lyrics Translation */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-4 border border-outline-variant/30">
+        <div className="flex items-center gap-3">
+          <Languages className="text-primary" size={22} />
+          <div>
+            <h2 className="text-base font-semibold text-on-surface">AI Lyrics Translation</h2>
+            <p className="text-xs text-on-surface-variant">Translate synced or plain lyrics using your own OpenAI, OpenRouter, or Gemini key</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveAI} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-on-surface-variant block mb-1">Provider</label>
+              <select
+                value={aiProvider}
+                onChange={(e) => setAiProvider(e.target.value as 'openai' | 'openrouter' | 'gemini')}
+                className="w-full px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="openai">OpenAI</option>
+                <option value="openrouter">OpenRouter</option>
+                <option value="gemini">Google Gemini</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-on-surface-variant block mb-1">Model</label>
+              <input
+                type="text"
+                value={aiModel}
+                onChange={(e) => setAiModel(e.target.value)}
+                placeholder="gpt-4o-mini / gemini-2.0-flash"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-on-surface-variant block mb-1">Target Language</label>
+              <input
+                type="text"
+                value={aiLanguage}
+                onChange={(e) => setAiLanguage(e.target.value)}
+                placeholder="English"
+                className="w-full px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="password"
+              value={aiApiKey}
+              onChange={(e) => setAiApiKey(e.target.value)}
+              placeholder="Paste API key (leave blank to keep existing)"
+              className="flex-1 px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-medium hover:opacity-90 transition-opacity shrink-0"
+            >
+              Save AI Settings
+            </button>
+          </div>
+          {aiStatus && <p className="text-xs text-primary">{aiStatus}</p>}
+        </form>
       </section>
 
       {/* About & Updates */}

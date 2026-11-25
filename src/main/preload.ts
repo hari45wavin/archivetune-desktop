@@ -111,6 +111,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     importM3U: () => ipcRenderer.invoke('storage:importM3U'),
   },
 
+  // AI Lyrics Translation
+  ai: {
+    getConfig: () => ipcRenderer.invoke('ai:getConfig'),
+    configure: (input: { provider: string; apiKey?: string; model?: string; targetLanguage?: string }) =>
+      ipcRenderer.invoke('ai:configure', input),
+    translateLyrics: (lines: string[], targetLanguage?: string) =>
+      ipcRenderer.invoke('ai:translateLyrics', lines, targetLanguage),
+  },
+
   // Shell, Updates & Tray
   checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
