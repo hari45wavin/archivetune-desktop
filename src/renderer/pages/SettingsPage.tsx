@@ -506,7 +506,7 @@ export default function SettingsPage() {
             <Info className="text-primary" size={22} />
             <div>
               <h2 className="text-base font-semibold text-on-surface">About ArchiveTune Desktop</h2>
-              <p className="text-xs text-on-surface-variant">Version 1.1.0 Desktop Client</p>
+              <p className="text-xs text-on-surface-variant">Version 1.2.0 Desktop Client</p>
             </div>
           </div>
           <button
