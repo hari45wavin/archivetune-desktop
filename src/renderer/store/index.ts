@@ -32,6 +32,7 @@ interface PlayerState {
   lyricsOffset: number; // in milliseconds (-5000 to +5000, fixes #987)
   lyricsFontSize: 'small' | 'medium' | 'large';
   lyricsControlsMode: 'hide' | 'auto' | 'show';
+  sponsorBlockEnabled: boolean;
 
   // Actions
   setCurrentTrack: (track: Track) => void;
@@ -55,6 +56,7 @@ interface PlayerState {
   setLyricsOffset: (offset: number) => void;
   setLyricsFontSize: (size: 'small' | 'medium' | 'large') => void;
   setLyricsControlsMode: (mode: 'hide' | 'auto' | 'show') => void;
+  setSponsorBlockEnabled: (enabled: boolean) => void;
   addToHistory: (track: Track) => void;
   nextTrack: () => Track | null;
   prevTrack: () => Track | null;
@@ -81,6 +83,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   lyricsOffset: 0,
   lyricsFontSize: 'medium',
   lyricsControlsMode: 'show',
+  sponsorBlockEnabled: true,
 
   setCurrentTrack: (track) => {
     set({ currentTrack: track });
@@ -144,6 +147,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setLyricsOffset: (lyricsOffset) => set({ lyricsOffset: Math.max(-5000, Math.min(5000, lyricsOffset)) }),
   setLyricsFontSize: (lyricsFontSize) => set({ lyricsFontSize }),
   setLyricsControlsMode: (lyricsControlsMode) => set({ lyricsControlsMode }),
+  setSponsorBlockEnabled: (sponsorBlockEnabled) => set({ sponsorBlockEnabled }),
   addToHistory: (track) =>
     set((s) => {
       const filtered = s.history.filter((t) => t.id !== track.id);

@@ -12,6 +12,7 @@ import { setupLibraryIPC } from './library';
 import { setupLyricsIPC } from './lyrics';
 import { setupScrobbleIPC } from './scrobble';
 import { setupSpotifyIPC } from './spotify';
+import { setupSponsorBlockIPC } from './sponsorblock';
 
 // Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
@@ -185,6 +186,7 @@ app.whenReady().then(() => {
   setupLyricsIPC();
   setupScrobbleIPC();
   setupSpotifyIPC();
+  setupSponsorBlockIPC();
 
   // Window control handlers
   ipcMain.on('window:minimize', () => mainWindow?.minimize());

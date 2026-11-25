@@ -62,6 +62,9 @@ declare global {
         updateNowPlaying: (track: object) => Promise<{ ok: boolean }>;
         scrobble: (track: object) => Promise<{ ok: boolean }>;
       };
+      sponsorblock: {
+        getSegments: (videoId: string) => Promise<Array<{ start: number; end: number; category: string }>>;
+      };
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -75,6 +78,19 @@ let fallbackAudio: HTMLAudioElement | null = null;
 let usingHtml5Fallback = false;
 let playbackStartTimestamp = 0;
 let fallbackEndedHandler: (() => void) | null = null;
+let activeSkipSegments: Array<{ start: number; end: number; category: string }> = [];
+let lastSkippedEnd = -1;
+
+function maybeSkipSponsorSegment(pos: number, seekFn: (sec: number) => void) {
+  if (!usePlayerStore.getState().sponsorBlockEnabled || activeSkipSegments.length === 0) return;
+  for (const seg of activeSkipSegments) {
+    if (pos >= seg.start && pos < seg.end - 0.8 && Math.abs(lastSkippedEnd - seg.end) > 0.5) {
+      lastSkippedEnd = seg.end;
+      seekFn(seg.end);
+      return;
+    }
+  }
+}
 
 function getFallbackAudio(): HTMLAudioElement {
   if (!fallbackAudio) {
@@ -84,10 +100,14 @@ function getFallbackAudio(): HTMLAudioElement {
     fallbackAudio.addEventListener('timeupdate', () => {
       if (!usingHtml5Fallback || !fallbackAudio) return;
       const store = usePlayerStore.getState();
-      store.setPosition(fallbackAudio.currentTime || 0);
+      const pos = fallbackAudio.currentTime || 0;
+      store.setPosition(pos);
       if (Number.isFinite(fallbackAudio.duration) && fallbackAudio.duration > 0) {
         store.setDuration(fallbackAudio.duration);
       }
+      maybeSkipSponsorSegment(pos, (target) => {
+        if (fallbackAudio) fallbackAudio.currentTime = target;
+      });
     });
 
     fallbackAudio.addEventListener('loadedmetadata', () => {
@@ -132,17 +152,33 @@ export function usePlayer() {
     setPosition(0);
 
     try {
+      activeSkipSegments = [];
+      lastSkippedEnd = -1;
       let url: string;
+      let ytVideoId: string | null = null;
       if (track.source === 'local' && track.path) {
         url = `file://${track.path.replace(/\\/g, '/')}`;
       } else if (track.source === 'spotify') {
         const resolved = await api.spotify.resolveTrack({ title: track.title, artist: track.artist });
         if (!resolved.url) throw new Error('Could not resolve Spotify audio stream');
         url = resolved.url;
+        ytVideoId = resolved.id;
       } else {
         const res = await api.ytmusic.getStreamUrl(track.id);
         if (!res.ok || !res.url) throw new Error(res.error ?? 'No stream URL');
         url = res.url;
+        ytVideoId = track.id;
+      }
+
+      if (ytVideoId && usePlayerStore.getState().sponsorBlockEnabled) {
+        api.sponsorblock
+          ?.getSegments(ytVideoId)
+          .then((segs) => {
+            if (usePlayerStore.getState().currentTrack?.id === track.id) {
+              activeSkipSegments = segs || [];
+            }
+          })
+          .catch(() => {});
       }
 
       const playRes = await api.player.play(url, {
@@ -367,6 +403,9 @@ export function usePlayerEvents() {
       if (usingHtml5Fallback) return;
       setPosition(info.position);
       setDuration(info.duration);
+      maybeSkipSponsorSegment(info.position, (target) => {
+        api.player.seek(target);
+      });
     });
 
     const unsubEnded = api.player.onEnded(handleTrackEnded);

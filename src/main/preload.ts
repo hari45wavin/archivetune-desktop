@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     scrobble: (track: object) => ipcRenderer.invoke('scrobble:scrobble', track),
   },
 
+  // SponsorBlock
+  sponsorblock: {
+    getSegments: (videoId: string) => ipcRenderer.invoke('sponsorblock:getSegments', videoId),
+  },
+
   // Shell & Tray
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
   onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => {

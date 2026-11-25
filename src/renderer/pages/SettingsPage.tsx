@@ -35,6 +35,8 @@ export default function SettingsPage() {
     setCrossfade,
     lyricsOffset,
     setLyricsOffset,
+    sponsorBlockEnabled,
+    setSponsorBlockEnabled,
   } = usePlayerStore();
   const { toggleNormalization } = usePlayer();
 
@@ -219,6 +221,27 @@ export default function SettingsPage() {
             <span className="text-xs font-mono bg-surface-container-highest px-3 py-1.5 rounded-lg text-on-surface">
               ~/Music
             </span>
+          </div>
+
+          {/* SponsorBlock Auto-Skip */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high">
+            <div>
+              <span className="text-sm font-medium text-on-surface">SponsorBlock Auto-Skip</span>
+              <p className="text-xs text-on-surface-variant">Skip non-music intros, outros, and sponsor segments on YouTube tracks</p>
+            </div>
+            <button
+              onClick={() => setSponsorBlockEnabled(!sponsorBlockEnabled)}
+              className={`w-11 h-6 rounded-full transition-colors relative ${
+                sponsorBlockEnabled ? 'bg-primary' : 'bg-surface-container-highest'
+              }`}
+              aria-label="Toggle SponsorBlock"
+            >
+              <span
+                className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                  sponsorBlockEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
           </div>
         </div>
       </section>
