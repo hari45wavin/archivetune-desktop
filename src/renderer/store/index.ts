@@ -44,6 +44,7 @@ interface PlayerState {
   lyricsFontSize: 'small' | 'medium' | 'large';
   lyricsControlsMode: 'hide' | 'auto' | 'show';
   sponsorBlockEnabled: boolean;
+  discordRpcEnabled: boolean;
   eqPreset: string;
   eqBands: number[];
 
@@ -71,6 +72,7 @@ interface PlayerState {
   setLyricsFontSize: (size: 'small' | 'medium' | 'large') => void;
   setLyricsControlsMode: (mode: 'hide' | 'auto' | 'show') => void;
   setSponsorBlockEnabled: (enabled: boolean) => void;
+  setDiscordRpcEnabled: (enabled: boolean) => void;
   setEqualizer: (bands: number[], preset?: string) => void;
   addToHistory: (track: Track) => void;
   nextTrack: () => Track | null;
@@ -99,6 +101,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   lyricsFontSize: 'medium',
   lyricsControlsMode: 'show',
   sponsorBlockEnabled: true,
+  discordRpcEnabled: true,
   eqPreset: 'Flat',
   eqBands: [0, 0, 0, 0, 0],
 
@@ -174,6 +177,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setLyricsFontSize: (lyricsFontSize) => set({ lyricsFontSize }),
   setLyricsControlsMode: (lyricsControlsMode) => set({ lyricsControlsMode }),
   setSponsorBlockEnabled: (sponsorBlockEnabled) => set({ sponsorBlockEnabled }),
+  setDiscordRpcEnabled: (discordRpcEnabled) => set({ discordRpcEnabled }),
   setEqualizer: (eqBands, preset) =>
     set({
       eqBands: eqBands.slice(0, 5),

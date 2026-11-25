@@ -66,6 +66,16 @@ declare global {
       sponsorblock: {
         getSegments: (videoId: string) => Promise<Array<{ start: number; end: number; category: string }>>;
       };
+      discord: {
+        setActivity: (track: {
+          title: string;
+          artist: string;
+          album?: string;
+          thumbnail?: string;
+          duration?: number;
+          position?: number;
+        } | null) => Promise<{ ok: boolean }>;
+      };
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -447,8 +457,29 @@ export function usePlayer() {
 let globalEventsRegistered = false;
 
 export function usePlayerEvents() {
-  const { currentTrack, isPlaying, setPosition, setDuration } = usePlayerStore();
+  const { currentTrack, isPlaying, discordRpcEnabled, setPosition, setDuration } = usePlayerStore();
   const { skipNext, skipPrev, pause, resume, seek } = usePlayer();
+
+  // Sync Discord Rich Presence on track/play state changes
+  useEffect(() => {
+    const discordApi = window.electronAPI?.discord;
+    if (!discordApi) return;
+    if (!discordRpcEnabled || !currentTrack || !isPlaying) {
+      discordApi.setActivity(null).catch(() => {});
+      return;
+    }
+    const { position, duration } = usePlayerStore.getState();
+    discordApi
+      .setActivity({
+        title: currentTrack.title,
+        artist: currentTrack.artist,
+        album: currentTrack.album,
+        thumbnail: currentTrack.thumbnail,
+        duration: duration || currentTrack.duration,
+        position,
+      })
+      .catch(() => {});
+  }, [currentTrack, isPlaying, discordRpcEnabled]);
 
   // Sync Windows SMTC / Linux MPRIS metadata & hardware media keys
   useEffect(() => {

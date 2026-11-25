@@ -37,6 +37,8 @@ export default function SettingsPage() {
     setLyricsOffset,
     sponsorBlockEnabled,
     setSponsorBlockEnabled,
+    discordRpcEnabled,
+    setDiscordRpcEnabled,
     eqPreset,
     eqBands,
   } = usePlayerStore();
@@ -241,6 +243,27 @@ export default function SettingsPage() {
               <span
                 className={`block w-4 h-4 rounded-full bg-white transition-transform ${
                   sponsorBlockEnabled ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* Discord Rich Presence */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-surface-container-high">
+            <div>
+              <span className="text-sm font-medium text-on-surface">Discord Rich Presence</span>
+              <p className="text-xs text-on-surface-variant">Show currently playing song on your Discord profile</p>
+            </div>
+            <button
+              onClick={() => setDiscordRpcEnabled(!discordRpcEnabled)}
+              className={`w-11 h-6 rounded-full transition-colors relative ${
+                discordRpcEnabled ? 'bg-primary' : 'bg-surface-container-highest'
+              }`}
+              aria-label="Toggle Discord Rich Presence"
+            >
+              <span
+                className={`block w-4 h-4 rounded-full bg-white transition-transform ${
+                  discordRpcEnabled ? 'translate-x-6' : 'translate-x-1'
                 }`}
               />
             </button>

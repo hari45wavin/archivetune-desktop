@@ -87,6 +87,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getSegments: (videoId: string) => ipcRenderer.invoke('sponsorblock:getSegments', videoId),
   },
 
+  // Discord Rich Presence
+  discord: {
+    setActivity: (track: object | null) => ipcRenderer.invoke('discord:setActivity', track),
+  },
+
   // Shell & Tray
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
   onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => {

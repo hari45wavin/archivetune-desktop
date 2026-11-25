@@ -13,6 +13,7 @@ import { setupLyricsIPC } from './lyrics';
 import { setupScrobbleIPC } from './scrobble';
 import { setupSpotifyIPC } from './spotify';
 import { setupSponsorBlockIPC } from './sponsorblock';
+import { setupDiscordIPC, cleanupDiscord } from './discord';
 
 // Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
@@ -187,6 +188,7 @@ app.whenReady().then(() => {
   setupScrobbleIPC();
   setupSpotifyIPC();
   setupSponsorBlockIPC();
+  setupDiscordIPC();
 
   // Window control handlers
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
@@ -229,13 +231,16 @@ app.whenReady().then(() => {
 
 app.on('before-quit', () => {
   cleanupMpv();
+  cleanupDiscord();
 });
 
 app.on('will-quit', () => {
   cleanupMpv();
+  cleanupDiscord();
 });
 
 app.on('window-all-closed', () => {
   cleanupMpv();
+  cleanupDiscord();
   if (process.platform !== 'darwin') app.quit();
 });
