@@ -44,12 +44,15 @@ Grab the latest pre-built binaries from the [**Releases Page**](https://github.c
 | **🎵 YouTube Music Streaming** | Instant charts, search, and streaming via native InnerTube (`net.fetch`, VPN/proxy-aware) + `yt-dlp` fallback. |
 | **💚 Spotify Connect Integration** | Import & play Spotify Liked Songs and all Playlists (with full pagination) resolved to high-fidelity audio streams. |
 | **📁 Local Music Library** | Fast local directory scanning for MP3, FLAC, WAV, OGG, M4A, OPUS with ID3/tag parsing. |
-| **🎤 Synced Waterfall Lyrics** | Synchronized line-by-line LRC lyrics with auto-scrolling, click-to-seek, sync offset slider (-5s to +5s), and font size toggles. |
-| **⏰ Sleep Timer** | Configurable sleep timer (15m, 30m, 45m, 60m, or end-of-track) with live badge display. |
-| **⚡ Playback Speed & Normalization** | 0.5x to 2.0x playback speed and Dynamic Audio Normalization (`dynaudnorm`) with `mpv`. |
-| **💾 Offline Downloader** | One-click track download to your `Music` folder. |
-| **📻 Last.fm Scrobbler** | Audioscrobbler 2.0 integration with live Now Playing updates and scrobbling thresholds. |
-| **🎛️ Dual Audio Backend** | Native `mpv` IPC engine (UNIX sockets on Linux, Named Pipes + WASAPI on Windows) with automatic built-in HTML5 Audio fallback when `mpv` is absent. |
+| **🎤 Synced Waterfall Lyrics** | Synchronized line-by-line LRCLib + YouTube Music lyrics, click-to-seek, sync offset (-5s to +5s), Hide/Auto/Show controls, and **AI Lyrics Translation** (OpenAI / OpenRouter / Gemini). |
+| **🎧 Podcasts & RSS** | Search Apple Podcasts directory or open custom RSS feeds, manage subscriptions, and stream episodes. |
+| **👥 Together Mode (LAN Sync)** | Zero-dependency RFC 6455 WebSocket host & guest sync (`ws://<LAN-IP>:47820`) for shared playback over LAN/VPN. |
+| **🎛️ Equalizer & Crossfade** | 5-band Graphic Equalizer (`60Hz–14kHz` + presets), `dynaudnorm` normalization, playback speed, and dual-audio crossfade. |
+| **⏭️ SponsorBlock & Radio** | Automatic SponsorBlock segment skipping, Up Next Radio recommendations, and Albums/Artists/Playlists discovery tabs. |
+| **❤️ Persistent Library & Backups** | Favorites, Custom Playlists with `.m3u` / `.m3u8` import/export, listening stats, and portable `.json` backup/restore. |
+| **🎮 Desktop Integration** | Discord Rich Presence, hardware media keys (Windows SMTC / Linux MPRIS), System Tray controls, and Ambient Now Playing Canvas. |
+| **📻 Scrobbling & Accounts** | Last.fm & ListenBrainz scrobbling plus Google/YouTube Music session sign-in (`SAPISIDHASH`). |
+| **⏰ Sleep Timer & Offline Save** | Sleep timer (15m–60m / end-of-track), one-click track downloads, and dual `mpv` IPC + HTML5 Audio backend. |
 
 ---
 
@@ -96,18 +99,25 @@ npm run dist:win     # Windows NSIS / portable (on Windows or Wine)
 archivetune-desktop/
 ├── src/
 │   ├── main/                  # Electron Main Process (Node.js)
-│   │   ├── index.ts           # Window lifecycle, memory tuning, IPC registration
+│   │   ├── index.ts           # Window lifecycle, tray, updates, IPC registration
 │   │   ├── binaries.ts        # Cross-platform binary & system/VPN proxy resolver
 │   │   ├── player.ts          # mpv IPC engine (UNIX sockets / Windows Named Pipes)
-│   │   ├── ytmusic.ts         # InnerTube API (net.fetch) + yt-dlp fallback
+│   │   ├── ytmusic.ts         # InnerTube API (net.fetch, SAPISIDHASH) + yt-dlp fallback
 │   │   ├── spotify.ts         # Spotify Web OAuth, full pagination & stream resolver
 │   │   ├── library.ts         # Local music directory recursive scanner
-│   │   ├── lyrics.ts          # LRCLib synced lyrics fetcher & LRC parser
+│   │   ├── storage.ts         # Persistent favorites, playlists, M3U, stats & JSON backups
+│   │   ├── lyrics.ts          # LRCLib + YouTube Music synced lyrics fetcher
+│   │   ├── ai.ts              # AI lyrics translation (OpenAI / OpenRouter / Gemini)
+│   │   ├── sponsorblock.ts    # SponsorBlock segment skipper
+│   │   ├── scrobble.ts        # Last.fm & ListenBrainz scrobbling
+│   │   ├── discord.ts         # Zero-dependency Discord Rich Presence IPC
+│   │   ├── together.ts        # LAN Together Mode WebSocket host (RFC 6455)
+│   │   ├── podcasts.ts        # Apple Podcasts search & RSS feed parser
 │   │   └── preload.ts         # Secure contextBridge API for renderer
 │   │
 │   └── renderer/              # Electron Renderer Process (React + Vite)
 │       ├── components/        # TitleBar, Sidebar, MiniPlayer, NowPlayingOverlay, TrackRow
-│       ├── pages/             # HomePage, SearchPage, SpotifyPage, LibraryPage, SettingsPage
+│       ├── pages/             # Home, Search, Spotify, Library, Podcasts, Settings
 │       ├── store/             # Zustand player, UI, and library stores
 │       ├── lib/               # usePlayer hook (mpv + HTML5 Audio fallback)
 │       └── styles/            # globals.css with Material You CSS variables
