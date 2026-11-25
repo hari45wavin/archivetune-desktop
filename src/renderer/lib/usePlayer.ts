@@ -1,17 +1,18 @@
 /**
- * usePlayer.ts — React hook that bridges the Zustand store to Electron IPC
+ * usePlayer.ts — React hook bridging the Zustand store to Electron IPC
  *
- * Handles play, pause, resume, seek, queue navigation, and progress polling.
+ * Uses mpv IPC by default, with automatic Chromium HTML5 <audio> fallback
+ * when mpv is not installed (e.g., standalone Windows portable runs).
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { usePlayerStore, Track } from '../store';
 
 declare global {
   interface Window {
     electronAPI: {
       player: {
-        play: (url: string, meta: object) => Promise<{ ok: boolean }>;
+        play: (url: string, meta: object) => Promise<{ ok: boolean; fallback?: boolean; mode?: string }>;
         pause: () => Promise<void>;
         resume: () => Promise<void>;
         stop: () => Promise<void>;
@@ -69,15 +70,55 @@ declare global {
   }
 }
 
+let fallbackAudio: HTMLAudioElement | null = null;
+let usingHtml5Fallback = false;
+let playbackStartTimestamp = 0;
+let fallbackEndedHandler: (() => void) | null = null;
+
+function getFallbackAudio(): HTMLAudioElement {
+  if (!fallbackAudio) {
+    fallbackAudio = new Audio();
+    fallbackAudio.preload = 'auto';
+
+    fallbackAudio.addEventListener('timeupdate', () => {
+      if (!usingHtml5Fallback || !fallbackAudio) return;
+      const store = usePlayerStore.getState();
+      store.setPosition(fallbackAudio.currentTime || 0);
+      if (Number.isFinite(fallbackAudio.duration) && fallbackAudio.duration > 0) {
+        store.setDuration(fallbackAudio.duration);
+      }
+    });
+
+    fallbackAudio.addEventListener('loadedmetadata', () => {
+      if (!usingHtml5Fallback || !fallbackAudio) return;
+      if (Number.isFinite(fallbackAudio.duration) && fallbackAudio.duration > 0) {
+        usePlayerStore.getState().setDuration(fallbackAudio.duration);
+      }
+    });
+
+    fallbackAudio.addEventListener('ended', () => {
+      if (!usingHtml5Fallback) return;
+      fallbackEndedHandler?.();
+    });
+  }
+  return fallbackAudio;
+}
+
+function stopFallbackAudio() {
+  if (fallbackAudio) {
+    fallbackAudio.pause();
+    fallbackAudio.removeAttribute('src');
+    fallbackAudio.load();
+  }
+  usingHtml5Fallback = false;
+}
+
 export function usePlayer() {
   const {
     currentTrack, queue, queueIndex, isPlaying, volume,
-    setCurrentTrack, setIsPlaying, setPosition, setDuration, setLoading,
+    setCurrentTrack, setIsPlaying, setPosition, setLoading,
     nextTrack, prevTrack,
   } = usePlayerStore();
-
-  const scrobbleTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const startTimeRef = useRef<number>(0);
 
   const playTrack = useCallback(async (track: Track) => {
     const api = window.electronAPI;
@@ -91,7 +132,7 @@ export function usePlayer() {
     try {
       let url: string;
       if (track.source === 'local' && track.path) {
-        url = `file://${track.path}`;
+        url = `file://${track.path.replace(/\\/g, '/')}`;
       } else if (track.source === 'spotify') {
         const resolved = await api.spotify.resolveTrack({ title: track.title, artist: track.artist });
         if (!resolved.url) throw new Error('Could not resolve Spotify audio stream');
@@ -102,18 +143,29 @@ export function usePlayer() {
         url = res.url;
       }
 
-      await api.player.play(url, {
+      const playRes = await api.player.play(url, {
         title: track.title,
         artist: track.artist,
         album: track.album ?? '',
       });
 
-      await api.player.setVolume(volume);
+      if (playRes?.ok) {
+        stopFallbackAudio();
+        await api.player.setVolume(volume);
+      } else {
+        // Fallback to Chromium HTML5 Audio when mpv isn't available on host
+        usingHtml5Fallback = true;
+        const audio = getFallbackAudio();
+        audio.src = url;
+        audio.volume = Math.max(0, Math.min(1, volume));
+        audio.playbackRate = usePlayerStore.getState().speed || 1;
+        await audio.play();
+      }
+
       setIsPlaying(true);
       setLoading(false);
-      startTimeRef.current = Math.floor(Date.now() / 1000);
+      playbackStartTimestamp = Math.floor(Date.now() / 1000);
 
-      // Now-playing scrobble
       api.scrobble.updateNowPlaying({
         artist: track.artist,
         track: track.title,
@@ -128,17 +180,29 @@ export function usePlayer() {
   }, [volume, setCurrentTrack, setIsPlaying, setPosition, setLoading]);
 
   const pause = useCallback(async () => {
-    await window.electronAPI?.player.pause();
+    if (usingHtml5Fallback && fallbackAudio) {
+      fallbackAudio.pause();
+    } else {
+      await window.electronAPI?.player.pause();
+    }
     setIsPlaying(false);
   }, [setIsPlaying]);
 
   const resume = useCallback(async () => {
-    await window.electronAPI?.player.resume();
+    if (usingHtml5Fallback && fallbackAudio) {
+      await fallbackAudio.play();
+    } else {
+      await window.electronAPI?.player.resume();
+    }
     setIsPlaying(true);
   }, [setIsPlaying]);
 
   const seek = useCallback(async (seconds: number) => {
-    await window.electronAPI?.player.seek(seconds);
+    if (usingHtml5Fallback && fallbackAudio) {
+      fallbackAudio.currentTime = seconds;
+    } else {
+      await window.electronAPI?.player.seek(seconds);
+    }
     setPosition(seconds);
   }, [setPosition]);
 
@@ -154,13 +218,19 @@ export function usePlayer() {
 
   const changeSpeed = useCallback(async (speed: number) => {
     usePlayerStore.getState().setSpeed(speed);
-    await window.electronAPI?.player.setSpeed(speed);
+    if (usingHtml5Fallback && fallbackAudio) {
+      fallbackAudio.playbackRate = speed;
+    } else {
+      await window.electronAPI?.player.setSpeed(speed);
+    }
   }, []);
 
   const toggleNormalization = useCallback(async () => {
     const next = !usePlayerStore.getState().normalization;
     usePlayerStore.getState().setNormalization(next);
-    await window.electronAPI?.player.setNormalization(next);
+    if (!usingHtml5Fallback) {
+      await window.electronAPI?.player.setNormalization(next);
+    }
   }, []);
 
   const downloadCurrentTrack = useCallback(async (track?: Track) => {
@@ -172,6 +242,13 @@ export function usePlayer() {
       artist: target.artist,
     });
   }, [currentTrack]);
+
+  // Keep HTML5 fallback volume synchronized with store volume
+  useEffect(() => {
+    if (usingHtml5Fallback && fallbackAudio) {
+      fallbackAudio.volume = Math.max(0, Math.min(1, volume));
+    }
+  }, [volume]);
 
   // Sleep timer interval (countdown every 60s)
   useEffect(() => {
@@ -208,20 +285,11 @@ export function usePlayer() {
 let globalEventsRegistered = false;
 
 export function usePlayerEvents() {
-  const { setPosition, setDuration, skipNext, pause } = usePlayer();
-  const startTimeRef = useRef<number>(0);
+  const { setPosition, setDuration } = usePlayerStore();
+  const { skipNext, pause } = usePlayer();
 
   useEffect(() => {
-    const api = window.electronAPI;
-    if (!api || globalEventsRegistered) return;
-    globalEventsRegistered = true;
-
-    const unsubProgress = api.player.onProgress((info: any) => {
-      setPosition(info.position);
-      setDuration(info.duration);
-    });
-
-    const unsubEnded = api.player.onEnded(() => {
+    const handleTrackEnded = () => {
       const { sleepTimer, setSleepTimer } = usePlayerStore.getState();
       if (sleepTimer === 'track') {
         setSleepTimer(null);
@@ -231,18 +299,33 @@ export function usePlayerEvents() {
 
       const { currentTrack: ct } = usePlayerStore.getState();
       if (ct && ct.duration > 30) {
-        api.scrobble.scrobble({
+        window.electronAPI?.scrobble.scrobble({
           artist: ct.artist,
           track: ct.title,
           album: ct.album,
-          timestamp: startTimeRef.current,
+          timestamp: playbackStartTimestamp || Math.floor(Date.now() / 1000),
           duration: ct.duration,
         }).catch(() => {});
       }
       skipNext();
+    };
+
+    fallbackEndedHandler = handleTrackEnded;
+
+    const api = window.electronAPI;
+    if (!api || globalEventsRegistered) return;
+    globalEventsRegistered = true;
+
+    const unsubProgress = api.player.onProgress((info: any) => {
+      if (usingHtml5Fallback) return;
+      setPosition(info.position);
+      setDuration(info.duration);
     });
 
+    const unsubEnded = api.player.onEnded(handleTrackEnded);
+
     return () => {
+      fallbackEndedHandler = null;
       unsubProgress();
       unsubEnded();
       globalEventsRegistered = false;

@@ -1,7 +1,7 @@
 {
-  "name": "archivetune-linux",
-  "version": "1.0.0",
-  "description": "ArchiveTune for Linux — YouTube Music & Local Files Desktop Player",
+  "name": "archivetune-desktop",
+  "version": "1.1.0",
+  "description": "ArchiveTune Desktop — YouTube Music, Spotify & Local Files Desktop Player",
   "private": true,
   "author": {
     "name": "hari45wavin",
@@ -18,6 +18,7 @@
     "build:main": "tsc -p tsconfig.main.json",
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux",
+    "dist:win": "npm run build && electron-builder --win",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit"
   },
@@ -46,19 +47,26 @@
     "wait-on": "^8.0.1"
   },
   "build": {
-    "appId": "com.rukamori.archivetune.linux",
+    "appId": "com.rukamori.archivetune.desktop",
     "productName": "ArchiveTune",
     "linux": {
       "target": ["AppImage", "dir"],
       "category": "Audio",
       "icon": "assets/icon.png",
       "synopsis": "YouTube Music & Local Files Player",
-      "description": "ArchiveTune for Linux — the cutest music player with YouTube Music streaming, local library, synced lyrics, crossfade, and Last.fm scrobbling."
+      "description": "ArchiveTune Desktop — the cutest music player with YouTube Music streaming, Spotify integration, local library, synced lyrics, crossfade, and Last.fm scrobbling."
     },
     "win": {
       "target": ["nsis", "portable"],
       "icon": "assets/icon.png"
     },
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": ["**/*", "!.gitkeep"]
+      }
+    ],
     "directories": {
       "output": "release",
       "buildResources": "assets"

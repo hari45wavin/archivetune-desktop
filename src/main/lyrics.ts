@@ -25,7 +25,7 @@ function httpsGet(url: string): Promise<string> {
       url,
       {
         headers: {
-          'User-Agent': 'ArchiveTune-Linux/1.0 (https://github.com/hari45wavin/archivetune-linux)',
+          'User-Agent': 'ArchiveTune-Desktop/1.0 (https://github.com/hari45wavin/archivetune-desktop)',
         },
       },
       (res) => {

@@ -9,21 +9,17 @@
  * - SpotifyPlaybackResolver: Resolves Spotify tracks to YouTube Music audio streams for high-fidelity playback
  */
 
-import { app, ipcMain, BrowserWindow, session } from 'electron';
-import https from 'https';
+import { app, ipcMain, BrowserWindow, session, net } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
+import { searchYouTubeMusic, getStreamUrl } from './ytmusic';
 
 function getConfigPath(): string {
   try {
     return path.join(app.getPath('userData'), 'spotify.json');
   } catch {
-    return path.join(os.homedir(), '.config', 'archivetune-linux', 'spotify.json');
+    return path.join(os.homedir(), '.config', 'archivetune-desktop', 'spotify.json');
   }
 }
 
@@ -70,41 +66,33 @@ function saveConfig(cfg: StoredConfig) {
   } catch { /* ignore */ }
 }
 
-function httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const req = https.get(
-      u,
-      {
-        headers: {
-          'User-Agent': USER_AGENT,
-          'App-Platform': 'WebPlayer',
-          'Origin': 'https://open.spotify.com',
-          'Referer': 'https://open.spotify.com/',
-          Accept: 'application/json, text/plain, */*',
-          'Accept-Language': 'en',
-          'sec-fetch-dest': 'empty',
-          'sec-fetch-mode': 'cors',
-          'sec-fetch-site': 'same-site',
-          ...headers,
-        },
+async function httpGet(url: string, headers: Record<string, string> = {}): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await net.fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'App-Platform': 'WebPlayer',
+        Origin: 'https://open.spotify.com',
+        Referer: 'https://open.spotify.com/',
+        Accept: 'application/json, text/plain, */*',
+        'Accept-Language': 'en',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-site',
+        ...headers,
       },
-      (res) => {
-        let data = '';
-        res.on('data', (c) => { data += c; });
-        res.on('end', () => {
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-          } else {
-            resolve(data);
-          }
-        });
-        res.on('error', reject);
-      }
-    );
-    req.on('error', reject);
-    req.setTimeout(15000, () => { req.destroy(); reject(new Error('Request timed out')); });
-  });
+    });
+    const data = await res.text();
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${data}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -225,36 +213,37 @@ async function spotifyApi(endpoint: string, retries = 2): Promise<any> {
 
 /**
  * SpotifyPlaybackResolver:
- * Resolves a Spotify track (title, artist) to a YouTube Music stream URL via yt-dlp
+ * Resolves a Spotify track (title, artist) to a YouTube Music stream URL via InnerTube / yt-dlp
  */
 export async function resolveSpotifyTrackToStream(track: { title: string; artist: string }): Promise<{ url: string; id: string }> {
-  const query = `ytsearch1:${track.artist} - ${track.title} official audio`;
-
-  const searchOut = await execFileAsync('yt-dlp', [
-    query,
-    '--dump-json',
-    '--default-search',
-    'ytsearch',
-    '--no-playlist',
-    '--quiet',
-  ], { timeout: 30000 });
-
-  const info = JSON.parse(searchOut.stdout);
-  const videoId = info.id;
+  const results = await searchYouTubeMusic(`${track.artist} - ${track.title} official audio`);
+  const videoId = results[0]?.id;
   if (!videoId) throw new Error('Could not match Spotify track on YouTube');
 
-  const urlOut = await execFileAsync('yt-dlp', [
-    '-f',
-    'bestaudio[ext=m4a]/bestaudio',
-    '--get-url',
-    '--quiet',
-    `https://www.youtube.com/watch?v=${videoId}`,
-  ], { timeout: 30000 });
+  const url = await getStreamUrl(videoId);
+  return { url, id: videoId };
+}
 
-  return {
-    url: urlOut.stdout.trim(),
-    id: videoId,
-  };
+async function fetchPaginatedTracks(initialUrl: string, maxTracks: number): Promise<any[]> {
+  const tracks: any[] = [];
+  let nextUrl: string | null = initialUrl;
+  while (nextUrl && tracks.length < maxTracks) {
+    const data = await spotifyApi(nextUrl);
+    for (const item of data.items || []) {
+      if (!item?.track?.id) continue;
+      tracks.push({
+        id: `spotify:${item.track.id}`,
+        title: item.track.name,
+        artist: item.track.artists.map((a: any) => a.name).join(', '),
+        album: item.track.album?.name,
+        duration: Math.round(item.track.duration_ms / 1000),
+        thumbnail: item.track.album?.images?.[0]?.url,
+        source: 'spotify',
+      });
+    }
+    nextUrl = data.next || null;
+  }
+  return tracks;
 }
 
 export function setupSpotifyIPC() {
@@ -520,57 +509,48 @@ export function setupSpotifyIPC() {
     return { ok: true };
   });
 
-  // Fetch Liked Songs
+  // Fetch Liked Songs (paginated)
   ipcMain.handle('spotify:getLikedSongs', async (_e, limit = 50, offset = 0) => {
     try {
-      const data = await spotifyApi(`/me/tracks?limit=${limit}&offset=${offset}`);
-      return (data.items || []).map((item: any) => ({
-        id: `spotify:${item.track.id}`,
-        title: item.track.name,
-        artist: item.track.artists.map((a: any) => a.name).join(', '),
-        album: item.track.album?.name,
-        duration: Math.round(item.track.duration_ms / 1000),
-        thumbnail: item.track.album?.images?.[0]?.url,
-        source: 'spotify',
-      }));
+      const pageLimit = Math.min(Math.max(limit, 1), 50);
+      return await fetchPaginatedTracks(`/me/tracks?limit=${pageLimit}&offset=${offset}`, 500);
     } catch (err) {
       console.error('spotify:getLikedSongs error', err);
       return [];
     }
   });
 
-  // Fetch User Playlists
+  // Fetch All User Playlists (full pagination, matching upstream PR #1503 fix)
   ipcMain.handle('spotify:getPlaylists', async (_e, limit = 50) => {
     try {
-      const data = await spotifyApi(`/me/playlists?limit=${limit}`);
-      return (data.items || []).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        description: p.description,
-        trackCount: p.tracks?.total || 0,
-        thumbnail: p.images?.[0]?.url,
-      }));
+      const pageLimit = Math.min(Math.max(limit, 1), 50);
+      const playlists: any[] = [];
+      let nextUrl: string | null = `/me/playlists?limit=${pageLimit}&offset=0`;
+      while (nextUrl) {
+        const data = await spotifyApi(nextUrl);
+        for (const p of data.items || []) {
+          if (!p?.id) continue;
+          playlists.push({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            trackCount: p.tracks?.total || 0,
+            thumbnail: p.images?.[0]?.url,
+          });
+        }
+        nextUrl = data.next || null;
+      }
+      return playlists;
     } catch (err) {
       console.error('spotify:getPlaylists error', err);
       return [];
     }
   });
 
-  // Fetch Tracks for a Playlist
+  // Fetch Tracks for a Playlist (paginated)
   ipcMain.handle('spotify:getPlaylistTracks', async (_e, playlistId: string) => {
     try {
-      const data = await spotifyApi(`/playlists/${playlistId}/tracks?limit=100`);
-      return (data.items || [])
-        .filter((item: any) => item.track)
-        .map((item: any) => ({
-          id: `spotify:${item.track.id}`,
-          title: item.track.name,
-          artist: item.track.artists.map((a: any) => a.name).join(', '),
-          album: item.track.album?.name,
-          duration: Math.round(item.track.duration_ms / 1000),
-          thumbnail: item.track.album?.images?.[0]?.url,
-          source: 'spotify',
-        }));
+      return await fetchPaginatedTracks(`/playlists/${playlistId}/tracks?limit=100`, 1000);
     } catch (err) {
       console.error('spotify:getPlaylistTracks error', err);
       return [];

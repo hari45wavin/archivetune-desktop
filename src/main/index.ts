@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import os from 'os';
 import path from 'path';
 import fs from 'fs';
 import { setupPlayerIPC, cleanupMpv } from './player';
@@ -7,6 +8,10 @@ import { setupLibraryIPC } from './library';
 import { setupLyricsIPC } from './lyrics';
 import { setupScrobbleIPC } from './scrobble';
 import { setupSpotifyIPC } from './spotify';
+
+// Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
+app.commandLine.appendSwitch('disable-background-networking');
 
 // Ensure rock-solid stability and instant cold-boot across all Linux drivers (Intel/AMD/Nvidia).
 if (process.platform === 'linux') {
@@ -35,7 +40,7 @@ function resolveIconPath(): string {
     path.join(__dirname, '../../assets/icon.png'),
     path.join(process.resourcesPath, 'assets/icon.png'),
     path.join(app.getAppPath(), 'assets/icon.png'),
-    '/home/hariom_joshi/.local/share/icons/hicolor/256x256/apps/archivetune.png',
+    path.join(os.homedir(), '.local/share/icons/hicolor/256x256/apps/archivetune.png'),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -63,6 +68,8 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: false, // Required for streaming audio URLs
+      spellcheck: false,
+      backgroundThrottling: true,
     },
     icon: iconPath || undefined,
   });

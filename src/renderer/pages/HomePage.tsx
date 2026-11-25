@@ -248,10 +248,16 @@ export default function HomePage() {
               <TrackRow key={`${track.id}-${i}`} track={track} index={i} showIndex queue={tracks} />
             ))}
           </div>
+        ) : isFetching ? (
+          <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant gap-3">
+            <Radio size={40} className="text-primary/50 animate-pulse" />
+            <p className="text-sm">Fetching live songs from YouTube Music...</p>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-16 text-on-surface-variant gap-3">
             <Radio size={40} className="text-primary/50" />
-            <p className="text-sm">Fetching live songs from YouTube Music...</p>
+            <p className="text-sm font-medium text-on-surface">Couldn&apos;t load tracks right now</p>
+            <p className="text-xs text-on-surface-variant">Check your internet or VPN connection and try again.</p>
             <button
               onClick={handleRefresh}
               className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold"

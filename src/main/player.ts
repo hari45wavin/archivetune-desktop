@@ -1,31 +1,44 @@
 /**
- * player.ts — mpv-based audio player via IPC socket
+ * player.ts — Cross-platform mpv IPC audio player with native fallback
  *
- * Full real-time control via JSON IPC socket with:
- * - Accurate time-pos and duration updates (slider and lyrics sync)
- * - Pause, resume, seek, volume, speed adjustment (0.5x - 2.0x)
- * - Audio normalization (dynaudnorm)
- * - Track downloading via yt-dlp into ~/Music/
+ * - Uses UNIX Domain Sockets on Linux/macOS and Windows Named Pipes on win32
+ * - Passes --ao=wasapi & windowsHide on Windows
+ * - Falls back gracefully (returns { ok: false, fallback: true }) when mpv is
+ *   not present so the renderer plays via Chromium's HTML5 Audio engine
+ * - Uses runYtDlp (with net.fetch stream download fallback) for offline saves
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
-import { spawn, ChildProcess, execFile } from 'child_process';
-import net from 'net';
+import { ipcMain, BrowserWindow, net } from 'electron';
+import { spawn, ChildProcess } from 'child_process';
+import netSock from 'net';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { promisify } from 'util';
+import { resolveBinary, resolveSystemProxy } from './binaries';
+import { runYtDlp, getStreamUrl } from './ytmusic';
 
-const execFileAsync = promisify(execFile);
-const SOCKET_PATH = path.join(os.tmpdir(), `archivetune-mpv-${process.pid}.sock`);
+const isWindows = process.platform === 'win32';
+const SOCKET_PATH = isWindows
+  ? `\\\\.\\pipe\\archivetune-mpv-${process.pid}`
+  : path.join(os.tmpdir(), `archivetune-mpv-${process.pid}.sock`);
 
 let mpvProcess: ChildProcess | null = null;
-let mpvSocket: net.Socket | null = null;
+let mpvSocket: netSock.Socket | null = null;
 let currentProgress = 0;
 let currentDuration = 0;
 let isPlaying = false;
 let progressInterval: NodeJS.Timeout | null = null;
 let socketBuffer = '';
+
+function cleanupSocketFile() {
+  if (!isWindows && fs.existsSync(SOCKET_PATH)) {
+    try {
+      fs.unlinkSync(SOCKET_PATH);
+    } catch {
+      /* ignore */
+    }
+  }
+}
 
 function sendMpvCommand(command: object): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -41,14 +54,15 @@ function sendMpvCommand(command: object): Promise<void> {
   });
 }
 
-function connectSocket(retries = 15): Promise<net.Socket> {
+function connectSocket(retries = 15): Promise<netSock.Socket> {
   return new Promise((resolve, reject) => {
     const tryConnect = (n: number) => {
-      const socket = net.createConnection(SOCKET_PATH);
+      const socket = netSock.createConnection(SOCKET_PATH);
       socket.on('connect', () => resolve(socket));
       socket.on('error', () => {
+        socket.destroy();
         if (n > 0) setTimeout(() => tryConnect(n - 1), 200);
-        else reject(new Error('Could not connect to mpv socket'));
+        else reject(new Error('Could not connect to mpv IPC'));
       });
     };
     tryConnect(retries);
@@ -72,28 +86,41 @@ export function cleanupMpv() {
     progressInterval = null;
   }
   if (mpvSocket) {
-    try { mpvSocket.destroy(); } catch { /* ignore */ }
+    try {
+      mpvSocket.destroy();
+    } catch {
+      /* ignore */
+    }
     mpvSocket = null;
   }
   if (mpvProcess) {
-    try { mpvProcess.kill('SIGTERM'); } catch { /* ignore */ }
+    try {
+      mpvProcess.kill('SIGTERM');
+    } catch {
+      /* ignore */
+    }
     mpvProcess = null;
   }
-  if (fs.existsSync(SOCKET_PATH)) {
-    try { fs.unlinkSync(SOCKET_PATH); } catch { /* ignore */ }
-  }
+  cleanupSocketFile();
 }
 
 async function startMpv(): Promise<void> {
-  if (mpvProcess) {
-    try { mpvProcess.kill('SIGKILL'); } catch { /* ignore */ }
-    mpvProcess = null;
-  }
-  if (fs.existsSync(SOCKET_PATH)) {
-    try { fs.unlinkSync(SOCKET_PATH); } catch { /* ignore */ }
+  const mpvBin = resolveBinary('mpv');
+  if (!mpvBin) {
+    throw new Error('mpv binary not found');
   }
 
-  mpvProcess = spawn('mpv', [
+  if (mpvProcess) {
+    try {
+      mpvProcess.kill('SIGKILL');
+    } catch {
+      /* ignore */
+    }
+    mpvProcess = null;
+  }
+  cleanupSocketFile();
+
+  const args = [
     '--idle=yes',
     '--no-video',
     '--no-terminal',
@@ -102,7 +129,26 @@ async function startMpv(): Promise<void> {
     '--gapless-audio=yes',
     '--demuxer-max-bytes=10M',
     '--demuxer-max-back-bytes=5M',
-  ], { stdio: 'ignore' });
+  ];
+  if (isWindows) {
+    args.push('--ao=wasapi');
+  }
+
+  const proxy = await resolveSystemProxy('https://www.youtube.com');
+  const env = { ...process.env };
+  if (proxy) {
+    env.http_proxy = proxy;
+    env.https_proxy = proxy;
+    args.push(`--http-proxy=${proxy}`);
+  }
+
+  mpvProcess = spawn(mpvBin, args, { stdio: 'ignore', windowsHide: true, env });
+
+  mpvProcess.on('error', () => {
+    mpvProcess = null;
+    mpvSocket = null;
+    isPlaying = false;
+  });
 
   mpvProcess.on('exit', () => {
     mpvProcess = null;
@@ -112,7 +158,6 @@ async function startMpv(): Promise<void> {
 
   mpvSocket = await connectSocket();
 
-  // Register property observers once connected
   await sendMpvCommand({ command: ['observe_property', 1, 'time-pos'] });
   await sendMpvCommand({ command: ['observe_property', 2, 'duration'] });
   await sendMpvCommand({ command: ['observe_property', 3, 'pause'] });
@@ -128,7 +173,6 @@ async function startMpv(): Promise<void> {
       try {
         const msg = JSON.parse(line);
 
-        // 1. Property changes from observe_property
         if (msg.event === 'property-change') {
           if (msg.name === 'time-pos' && typeof msg.data === 'number') {
             currentProgress = msg.data;
@@ -142,7 +186,6 @@ async function startMpv(): Promise<void> {
           }
         }
 
-        // 2. Query response from get_property
         if (msg.request_id === 101 && typeof msg.data === 'number') {
           currentProgress = msg.data;
           notifyProgress();
@@ -151,8 +194,7 @@ async function startMpv(): Promise<void> {
           notifyProgress();
         }
 
-        // 3. Playback lifecycle events
-        if (msg.event === 'end-file') {
+        if (msg.event === 'end-file' && msg.reason !== 'stop' && msg.reason !== 'redirect') {
           isPlaying = false;
           const win = BrowserWindow.getAllWindows()[0];
           win?.webContents.send('player:ended');
@@ -193,13 +235,9 @@ export function setupPlayerIPC() {
       isPlaying = true;
       currentProgress = 0;
       startProgressPolling();
-      return { ok: true };
-    } catch {
-      await startMpv();
-      await sendMpvCommand({ command: ['loadfile', url, 'replace'] });
-      isPlaying = true;
-      startProgressPolling();
-      return { ok: true };
+      return { ok: true, mode: 'mpv' };
+    } catch (err: any) {
+      return { ok: false, fallback: true, error: err?.message || 'mpv unavailable' };
     }
   });
 
@@ -285,30 +323,45 @@ export function setupPlayerIPC() {
     duration: currentDuration,
   }));
 
-  // Download track to ~/Music
   ipcMain.handle('player:downloadTrack', async (_e, track: { title: string; artist: string; id: string }) => {
     try {
       const musicDir = path.join(os.homedir(), 'Music');
       if (!fs.existsSync(musicDir)) fs.mkdirSync(musicDir, { recursive: true });
 
       const safeTitle = `${track.artist} - ${track.title}`.replace(/[\\/:*?"<>|]/g, '_');
-      const outPath = path.join(musicDir, `${safeTitle}.%(ext)s`);
-
       const targetUrl = track.id.startsWith('http')
         ? track.id
         : `https://www.youtube.com/watch?v=${track.id}`;
 
-      await execFileAsync('yt-dlp', [
-        '-x',
-        '--audio-format', 'mp3',
-        '--audio-quality', '0',
-        '--embed-thumbnail',
-        '--add-metadata',
-        '-o', outPath,
-        '--no-playlist',
-        targetUrl,
-      ], { timeout: 120000 });
+      if (resolveBinary('yt-dlp')) {
+        const outPath = path.join(musicDir, `${safeTitle}.%(ext)s`);
+        await runYtDlp(
+          [
+            '-x',
+            '--audio-format',
+            'mp3',
+            '--audio-quality',
+            '0',
+            '--embed-thumbnail',
+            '--add-metadata',
+            '-o',
+            outPath,
+            '--no-playlist',
+            targetUrl,
+          ],
+          120000
+        );
+        return { ok: true, path: musicDir };
+      }
 
+      // Pure Electron fallback when yt-dlp isn't present: download stream directly
+      const streamUrl = await getStreamUrl(track.id);
+      const res = await net.fetch(streamUrl);
+      if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+      const contentType = res.headers.get('content-type') || '';
+      const ext = contentType.includes('webm') ? 'webm' : 'm4a';
+      const arrayBuf = await res.arrayBuffer();
+      fs.writeFileSync(path.join(musicDir, `${safeTitle}.${ext}`), Buffer.from(arrayBuf));
       return { ok: true, path: musicDir };
     } catch (err: any) {
       console.error('Download error', err);

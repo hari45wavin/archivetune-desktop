@@ -335,14 +335,14 @@ export default function SettingsPage() {
         <div className="flex items-center gap-3">
           <Info className="text-primary" size={22} />
           <div>
-            <h2 className="text-base font-semibold text-on-surface">About ArchiveTune for Linux</h2>
-            <p className="text-xs text-on-surface-variant">Version 1.0.0 Desktop Port</p>
+            <h2 className="text-base font-semibold text-on-surface">About ArchiveTune Desktop</h2>
+            <p className="text-xs text-on-surface-variant">Version 1.1.0 Desktop Client</p>
           </div>
         </div>
 
         <p className="text-sm text-on-surface-variant leading-relaxed">
-          ArchiveTune for Linux is an open-source native desktop audio client replicating the features of ArchiveTune
-          (Material You theming, synced lyrics, local library, YouTube Music streaming via yt-dlp & mpv, Last.fm scrobbling).
+          ArchiveTune Desktop is an open-source cross-platform music client for Linux and Windows replicating the features of ArchiveTune
+          (Material You theming, synced lyrics, local library, YouTube Music streaming, Spotify integration, and Last.fm scrobbling).
         </p>
 
         <div className="flex gap-4 pt-2">
@@ -353,10 +353,10 @@ export default function SettingsPage() {
             Upstream ArchiveTune <ExternalLink size={12} />
           </button>
           <button
-            onClick={() => window.electronAPI?.openExternal('https://github.com/hari45wavin/archivetune-linux')}
+            onClick={() => window.electronAPI?.openExternal('https://github.com/hari45wavin/archivetune-desktop')}
             className="flex items-center gap-1.5 text-xs text-primary hover:underline"
           >
-            Linux Client Repository <ExternalLink size={12} />
+            Desktop Client Repository <ExternalLink size={12} />
           </button>
         </div>
       </section>

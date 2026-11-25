@@ -15,7 +15,7 @@ import { usePlayer, usePlayerEvents } from './lib/usePlayer';
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 5 * 60 * 1000, retry: 1 },
+    queries: { staleTime: 5 * 60 * 1000, gcTime: 5 * 60 * 1000, retry: 1 },
   },
 });
 
