@@ -18,7 +18,7 @@ export interface Track {
   album?: string;
   thumbnail?: string;
   duration: number;
-  source: 'youtube' | 'local' | 'spotify';
+  source: 'youtube' | 'local' | 'spotify' | 'podcast';
   path?: string; // for local files
 }
 

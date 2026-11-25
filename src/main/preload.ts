@@ -131,6 +131,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHostStatus: () => ipcRenderer.invoke('together:getHostStatus'),
   },
 
+  // Podcasts & RSS
+  podcasts: {
+    search: (query: string) => ipcRenderer.invoke('podcasts:search', query),
+    getFeed: (feedUrl: string) => ipcRenderer.invoke('podcasts:getFeed', feedUrl),
+    listSubscriptions: () => ipcRenderer.invoke('podcasts:listSubscriptions'),
+    subscribe: (show: object) => ipcRenderer.invoke('podcasts:subscribe', show),
+    unsubscribe: (feedUrl: string) => ipcRenderer.invoke('podcasts:unsubscribe', feedUrl),
+  },
+
   // Shell, Updates & Tray
   checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),

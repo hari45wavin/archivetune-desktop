@@ -17,6 +17,7 @@ import { setupDiscordIPC, cleanupDiscord } from './discord';
 import { setupStorageIPC } from './storage';
 import { setupAIIPC } from './ai';
 import { setupTogetherIPC, stopTogetherServer } from './together';
+import { setupPodcastsIPC } from './podcasts';
 
 // Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
@@ -195,6 +196,7 @@ app.whenReady().then(() => {
   setupStorageIPC();
   setupAIIPC();
   setupTogetherIPC();
+  setupPodcastsIPC();
 
   // Window control handlers
   ipcMain.on('window:minimize', () => mainWindow?.minimize());

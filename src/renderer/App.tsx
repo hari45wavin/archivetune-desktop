@@ -10,6 +10,7 @@ import HomePage from './pages/HomePage';
 import SearchPage from './pages/SearchPage';
 import SpotifyPage from './pages/SpotifyPage';
 import LibraryPage from './pages/LibraryPage';
+import PodcastsPage from './pages/PodcastsPage';
 import SettingsPage from './pages/SettingsPage';
 import { useUIStore, usePlayerStore } from './store';
 import { usePlayer, usePlayerEvents } from './lib/usePlayer';
@@ -50,6 +51,7 @@ function AppContent() {
             <Route path="/search" element={<SearchPage />} />
             <Route path="/spotify" element={<SpotifyPage />} />
             <Route path="/library" element={<LibraryPage />} />
+            <Route path="/podcasts" element={<PodcastsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -127,6 +127,16 @@ declare global {
         }) => Promise<{ ok: boolean; clients: number }>;
         getHostStatus: () => Promise<{ hosting: boolean; clients: number }>;
       };
+      podcasts: {
+        search: (query: string) => Promise<Array<{ id: string; title: string; author: string; feedUrl: string; artwork?: string; description?: string }>>;
+        getFeed: (feedUrl: string) => Promise<{
+          show: { id: string; title: string; author: string; feedUrl: string; artwork?: string; description?: string };
+          episodes: Array<{ id: string; title: string; audioUrl: string; duration: number; pubDate?: string; description?: string; thumbnail?: string; showTitle: string }>;
+        }>;
+        listSubscriptions: () => Promise<Array<{ id: string; title: string; author: string; feedUrl: string; artwork?: string; description?: string }>>;
+        subscribe: (show: object) => Promise<Array<{ id: string; title: string; author: string; feedUrl: string; artwork?: string; description?: string }>>;
+        unsubscribe: (feedUrl: string) => Promise<Array<{ id: string; title: string; author: string; feedUrl: string; artwork?: string; description?: string }>>;
+      };
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -191,6 +201,9 @@ async function resolveTrackStream(track: Track): Promise<{ url: string; ytVideoI
 
   if (track.source === 'local' && track.path) {
     return { url: `file://${track.path.replace(/\\/g, '/')}`, ytVideoId: null };
+  }
+  if (track.source === 'podcast' && track.path) {
+    return { url: track.path, ytVideoId: null };
   }
   if (track.source === 'spotify') {
     const resolved = await api.spotify.resolveTrack({ title: track.title, artist: track.artist });

@@ -19,7 +19,7 @@ export interface TogetherPlaybackState {
     album?: string;
     thumbnail?: string;
     duration: number;
-    source: 'youtube' | 'local' | 'spotify';
+    source: 'youtube' | 'local' | 'spotify' | 'podcast';
   } | null;
   isPlaying: boolean;
   position: number;
