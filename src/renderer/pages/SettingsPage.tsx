@@ -56,6 +56,8 @@ export default function SettingsPage() {
   const [aiLanguage, setAiLanguage] = useState('English');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiStatus, setAiStatus] = useState<string | null>(null);
+  const [ytConnected, setYtConnected] = useState(false);
+  const [ytStatusMsg, setYtStatusMsg] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<{
     checking: boolean;
     text?: string;
@@ -63,6 +65,12 @@ export default function SettingsPage() {
   }>({ checking: false });
 
   useEffect(() => {
+    window.electronAPI?.ytmusic
+      ?.getAccountStatus()
+      .then((res) => {
+        if (res) setYtConnected(res.connected);
+      })
+      .catch(() => {});
     window.electronAPI?.ai
       ?.getConfig()
       .then((cfg) => {
@@ -445,8 +453,52 @@ export default function SettingsPage() {
           </button>
         </div>
         <p className="text-xs text-on-surface-variant leading-relaxed">
-          Matches ArchiveTune's SpotifyCore resolver — streams Spotify music via high-fidelity YouTube Music audio streams with synced lyrics.
+          Matches ArchiveTune&apos;s SpotifyCore resolver — streams Spotify music via high-fidelity YouTube Music audio streams with synced lyrics.
         </p>
+      </section>
+
+      {/* YouTube Music Account */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-3 border border-outline-variant/30">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Radio className="text-error" size={22} />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface">YouTube Music Account</h2>
+              <p className="text-xs text-on-surface-variant">
+                {ytConnected ? 'Signed in — authenticated InnerTube requests active' : 'Sign in for personalized charts & age-restricted playback'}
+              </p>
+            </div>
+          </div>
+          {ytConnected ? (
+            <button
+              onClick={async () => {
+                await window.electronAPI?.ytmusic.logout();
+                setYtConnected(false);
+                setYtStatusMsg('Signed out of YouTube Music.');
+              }}
+              className="px-4 py-2 rounded-xl bg-error-container text-on-error-container font-semibold text-xs hover:opacity-90"
+            >
+              Sign Out
+            </button>
+          ) : (
+            <button
+              onClick={async () => {
+                setYtStatusMsg(null);
+                const res = await window.electronAPI?.ytmusic.login();
+                if (res?.ok) {
+                  setYtConnected(true);
+                  setYtStatusMsg('Signed in to YouTube Music!');
+                } else if (res?.error) {
+                  setYtStatusMsg(res.error);
+                }
+              }}
+              className="px-4 py-2 rounded-xl bg-primary text-on-primary font-semibold text-xs hover:opacity-90"
+            >
+              Sign In with Google
+            </button>
+          )}
+        </div>
+        {ytStatusMsg && <p className="text-xs text-primary">{ytStatusMsg}</p>}
       </section>
 
       {/* Last.fm Scrobbler */}

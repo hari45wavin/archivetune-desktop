@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAlbum: (albumId: string) => ipcRenderer.invoke('ytmusic:getAlbum', albumId),
     getPlaylist: (playlistId: string) => ipcRenderer.invoke('ytmusic:getPlaylist', playlistId),
     getSuggested: (videoId: string) => ipcRenderer.invoke('ytmusic:getSuggested', videoId),
+    getAccountStatus: () => ipcRenderer.invoke('ytmusic:getAccountStatus'),
+    login: () => ipcRenderer.invoke('ytmusic:login'),
+    logout: () => ipcRenderer.invoke('ytmusic:logout'),
   },
 
   // Spotify Integration (matching ArchiveTune SpotifyCore)

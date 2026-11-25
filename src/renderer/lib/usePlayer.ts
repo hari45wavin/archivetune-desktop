@@ -39,6 +39,9 @@ declare global {
         getArtist: (artistId: string) => Promise<Track[]>;
         getAlbum: (albumId: string) => Promise<Track[]>;
         getPlaylist: (playlistId: string) => Promise<Track[]>;
+        getAccountStatus: () => Promise<{ connected: boolean }>;
+        login: () => Promise<{ ok: boolean; error?: string }>;
+        logout: () => Promise<{ ok: boolean }>;
       };
       spotify: {
         getStatus: () => Promise<{ connected: boolean; user?: any }>;

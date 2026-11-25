@@ -5,8 +5,9 @@
  * InnerTube browsing/search/stream resolution, with resolved yt-dlp as fallback.
  */
 
-import { ipcMain, net } from 'electron';
+import { BrowserWindow, ipcMain, net, session } from 'electron';
 import { execFile } from 'child_process';
+import crypto from 'crypto';
 import { promisify } from 'util';
 import { resolveBinary, resolveSystemProxy } from './binaries';
 
@@ -223,10 +224,37 @@ function parseInnerTubeRenderer(r: any, filterDuration = true): SearchResult | n
   };
 }
 
+async function getYouTubeAuthHeaders(): Promise<Record<string, string>> {
+  try {
+    const ytSession = session.fromPartition('persist:youtube', { cache: true });
+    const cookies = await ytSession.cookies.get({ domain: '.youtube.com' });
+    if (cookies.length === 0) return {};
+
+    const sapisidCookie = cookies.find((c) => c.name === 'SAPISID' || c.name === '__Secure-3PAPISID');
+    if (!sapisidCookie?.value) return {};
+
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    const ts = Math.floor(Date.now() / 1000);
+    const digest = crypto
+      .createHash('sha1')
+      .update(`${ts} ${sapisidCookie.value} https://music.youtube.com`)
+      .digest('hex');
+
+    return {
+      Cookie: cookieHeader,
+      Authorization: `SAPISIDHASH ${ts}_${digest}`,
+      'X-Origin': 'https://music.youtube.com',
+    };
+  } catch {
+    return {};
+  }
+}
+
 async function fetchInnerTubeJson(url: string, body: object, userAgent = WEB_USER_AGENT): Promise<any> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   try {
+    const authHeaders = url.includes('music.youtube.com') ? await getYouTubeAuthHeaders() : {};
     const res = await net.fetch(url, {
       method: 'POST',
       signal: controller.signal,
@@ -235,6 +263,7 @@ async function fetchInnerTubeJson(url: string, body: object, userAgent = WEB_USE
         'User-Agent': userAgent,
         Origin: 'https://music.youtube.com',
         Referer: 'https://music.youtube.com/',
+        ...authHeaders,
       },
       body: JSON.stringify(body),
     });
@@ -682,5 +711,63 @@ export function setupYTMusicIPC() {
       console.error('ytmusic:getArtist error', err);
       return [];
     }
+  });
+
+  ipcMain.handle('ytmusic:getAccountStatus', async () => {
+    const auth = await getYouTubeAuthHeaders();
+    return { connected: Boolean(auth.Authorization) };
+  });
+
+  ipcMain.handle('ytmusic:login', async () => {
+    return new Promise((resolve) => {
+      let done = false;
+      const ytSession = session.fromPartition('persist:youtube', { cache: true });
+      const win = new BrowserWindow({
+        width: 560,
+        height: 720,
+        title: 'Sign in to YouTube Music — ArchiveTune',
+        autoHideMenuBar: true,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          session: ytSession,
+        },
+      });
+
+      const checkCookies = async () => {
+        if (done || win.isDestroyed()) return;
+        const auth = await getYouTubeAuthHeaders();
+        if (auth.Authorization && win.webContents.getURL().includes('music.youtube.com')) {
+          done = true;
+          setTimeout(() => {
+            if (!win.isDestroyed()) win.close();
+          }, 500);
+          resolve({ ok: true });
+        }
+      };
+
+      win.webContents.on('did-navigate', () => {
+        void checkCookies();
+      });
+      win.webContents.on('did-finish-load', () => {
+        void checkCookies();
+      });
+      win.on('closed', () => {
+        if (!done) {
+          done = true;
+          resolve({ ok: false, error: 'Login window closed before signing in' });
+        }
+      });
+
+      win.loadURL('https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F');
+    });
+  });
+
+  ipcMain.handle('ytmusic:logout', async () => {
+    try {
+      const ytSession = session.fromPartition('persist:youtube', { cache: true });
+      await ytSession.clearStorageData();
+    } catch { /* ignore */ }
+    return { ok: true };
   });
 }
