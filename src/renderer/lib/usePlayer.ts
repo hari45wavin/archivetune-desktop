@@ -125,6 +125,7 @@ export function usePlayer() {
     if (!api) return;
 
     setLoading(true);
+    usePlayerStore.getState().setPlaybackError(null);
     setCurrentTrack(track);
     setIsPlaying(false);
     setPosition(0);
@@ -173,8 +174,12 @@ export function usePlayer() {
         duration: track.duration,
       }).catch(() => {/* ignore if not configured */});
 
-    } catch (err) {
+    } catch (err: any) {
+      const sourceLabel =
+        track.source === 'spotify' ? 'Spotify' : track.source === 'local' ? 'Local File' : 'YouTube Music';
+      const detail = err?.message || String(err);
       console.error('playTrack error', err);
+      usePlayerStore.getState().setPlaybackError(`${sourceLabel}: ${detail}`);
       setLoading(false);
     }
   }, [volume, setCurrentTrack, setIsPlaying, setPosition, setLoading]);

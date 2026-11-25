@@ -23,6 +23,7 @@ interface PlayerState {
   repeat: 'none' | 'one' | 'all';
   shuffle: boolean;
   loading: boolean;
+  playbackError: string | null;
   speed: number;
   normalization: boolean;
   crossfade: number; // 0 to 20 seconds (fixes #504)
@@ -45,6 +46,7 @@ interface PlayerState {
   setRepeat: (mode: 'none' | 'one' | 'all') => void;
   toggleShuffle: () => void;
   setLoading: (loading: boolean) => void;
+  setPlaybackError: (error: string | null) => void;
   setSpeed: (speed: number) => void;
   setNormalization: (norm: boolean) => void;
   setCrossfade: (seconds: number) => void;
@@ -68,6 +70,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   repeat: 'none',
   shuffle: false,
   loading: false,
+  playbackError: null,
   speed: 1.0,
   normalization: false,
   crossfade: 0,
@@ -130,6 +133,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
     }),
   setLoading: (loading) => set({ loading }),
+  setPlaybackError: (playbackError) => set({ playbackError }),
   setSpeed: (speed) => set({ speed }),
   setNormalization: (normalization) => set({ normalization }),
   setCrossfade: (crossfade) => set({ crossfade }),

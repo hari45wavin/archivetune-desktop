@@ -21,20 +21,39 @@ const WEB_REMIX_CONTEXT = {
   },
 };
 
-const ANDROID_VR_CONTEXT = {
-  client: {
-    clientName: 'ANDROID_VR',
-    clientVersion: '1.56.21',
-    androidSdkVersion: 32,
-    osName: 'Android',
-    osVersion: '12L',
+const PLAYER_CLIENTS = [
+  {
+    name: 'ANDROID_VR',
+    userAgent:
+      'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+    context: {
+      client: {
+        clientName: 'ANDROID_VR',
+        clientVersion: '1.56.21',
+        androidSdkVersion: 32,
+        osName: 'Android',
+        osVersion: '12L',
+      },
+    },
   },
-};
+  {
+    name: 'IOS',
+    userAgent: 'com.google.ios.youtube/19.29.1 (iPhone16,2; U; CPU iOS 17_5_1 like Mac OS X;)',
+    context: {
+      client: {
+        clientName: 'IOS',
+        clientVersion: '19.29.1',
+        deviceMake: 'Apple',
+        deviceModel: 'iPhone16,2',
+        osName: 'iOS',
+        osVersion: '17.5.1.21F90',
+      },
+    },
+  },
+];
 
 const WEB_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-const ANDROID_VR_USER_AGENT =
-  'com.google.android.apps.youtube.vr.oculus/1.56.21 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip';
 
 export interface SearchResult {
   id: string;
@@ -394,35 +413,48 @@ export async function searchYouTubeMusic(query: string): Promise<SearchResult[]>
 }
 
 async function getStreamUrlViaInnerTube(videoId: string): Promise<string> {
-  const data = await fetchInnerTubeJson(
-    'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
-    {
-      context: ANDROID_VR_CONTEXT,
-      videoId,
-    },
-    ANDROID_VR_USER_AGENT
-  );
+  let lastError: Error = new Error('No playable audio stream found');
 
-  if (data?.playabilityStatus?.status && data.playabilityStatus.status !== 'OK') {
-    throw new Error(data.playabilityStatus.reason || `Unplayable: ${data.playabilityStatus.status}`);
+  for (const client of PLAYER_CLIENTS) {
+    try {
+      const data = await fetchInnerTubeJson(
+        'https://www.youtube.com/youtubei/v1/player?prettyPrint=false',
+        {
+          context: client.context,
+          videoId,
+        },
+        client.userAgent
+      );
+
+      if (data?.playabilityStatus?.status && data.playabilityStatus.status !== 'OK') {
+        lastError = new Error(
+          `${client.name}: ${data.playabilityStatus.reason || data.playabilityStatus.status}`
+        );
+        continue;
+      }
+
+      const adaptive = Array.isArray(data?.streamingData?.adaptiveFormats)
+        ? data.streamingData.adaptiveFormats
+        : [];
+      const audioFormats = adaptive
+        .filter((f: any) => typeof f?.mimeType === 'string' && f.mimeType.startsWith('audio/') && f.url)
+        .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
+
+      const preferred =
+        audioFormats.find((f: any) => f.mimeType.includes('audio/mp4')) ||
+        audioFormats.find((f: any) => f.mimeType.includes('audio/webm')) ||
+        audioFormats[0];
+
+      if (preferred?.url) {
+        return preferred.url;
+      }
+      lastError = new Error(`${client.name}: NO_FORMAT in streamingData`);
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
   }
 
-  const adaptive = Array.isArray(data?.streamingData?.adaptiveFormats)
-    ? data.streamingData.adaptiveFormats
-    : [];
-  const audioFormats = adaptive
-    .filter((f: any) => typeof f?.mimeType === 'string' && f.mimeType.startsWith('audio/') && f.url)
-    .sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0));
-
-  const preferred =
-    audioFormats.find((f: any) => f.mimeType.includes('audio/mp4')) ||
-    audioFormats.find((f: any) => f.mimeType.includes('audio/webm')) ||
-    audioFormats[0];
-
-  if (!preferred?.url) {
-    throw new Error('No direct audio stream in InnerTube player response');
-  }
-  return preferred.url;
+  throw lastError;
 }
 
 export async function getStreamUrl(videoId: string): Promise<string> {

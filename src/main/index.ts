@@ -1,7 +1,11 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron';
+import dns from 'dns';
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+
+// Prefer IPv4 DNS resolution to prevent YouTube CDN stalls on broken IPv6 VPNs
+dns.setDefaultResultOrder('ipv4first');
 import { setupPlayerIPC, cleanupMpv } from './player';
 import { setupYTMusicIPC } from './ytmusic';
 import { setupLibraryIPC } from './library';
