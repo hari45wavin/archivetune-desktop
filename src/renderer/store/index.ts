@@ -271,22 +271,49 @@ export const useUIStore = create<UIState>((set) => ({
   },
 }));
 
+export interface CustomPlaylist {
+  id: string;
+  name: string;
+  tracks: Track[];
+  createdAt: number;
+}
+
+export interface TrackPlayStat {
+  track: Track;
+  playCount: number;
+  lastPlayedAt: number;
+}
+
 interface LibraryState {
   tracks: Track[];
   directories: string[];
   isScanning: boolean;
+  favorites: Track[];
+  customPlaylists: CustomPlaylist[];
+  playStats: Record<string, TrackPlayStat>;
+  totalListeningSeconds: number;
 
   setTracks: (tracks: Track[]) => void;
   addDirectory: (dir: string) => void;
   setIsScanning: (scanning: boolean) => void;
+  setFavorites: (favorites: Track[]) => void;
+  setCustomPlaylists: (playlists: CustomPlaylist[]) => void;
+  setStats: (playStats: Record<string, TrackPlayStat>, totalListeningSeconds: number) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set) => ({
   tracks: [],
   directories: [],
   isScanning: false,
+  favorites: [],
+  customPlaylists: [],
+  playStats: {},
+  totalListeningSeconds: 0,
 
   setTracks: (tracks) => set({ tracks }),
   addDirectory: (dir) => set((s) => ({ directories: [...new Set([...s.directories, dir])] })),
   setIsScanning: (isScanning) => set({ isScanning }),
+  setFavorites: (favorites) => set({ favorites }),
+  setCustomPlaylists: (customPlaylists) => set({ customPlaylists }),
+  setStats: (playStats, totalListeningSeconds) => set({ playStats, totalListeningSeconds }),
 }));

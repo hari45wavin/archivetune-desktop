@@ -92,6 +92,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setActivity: (track: object | null) => ipcRenderer.invoke('discord:setActivity', track),
   },
 
+  // Persistent Favorites, Playlists & Listening Stats
+  storage: {
+    getState: () => ipcRenderer.invoke('storage:getState'),
+    toggleFavorite: (track: object) => ipcRenderer.invoke('storage:toggleFavorite', track),
+    createPlaylist: (name: string) => ipcRenderer.invoke('storage:createPlaylist', name),
+    deletePlaylist: (playlistId: string) => ipcRenderer.invoke('storage:deletePlaylist', playlistId),
+    addTrackToPlaylist: (playlistId: string, track: object) =>
+      ipcRenderer.invoke('storage:addTrackToPlaylist', playlistId, track),
+    removeTrackFromPlaylist: (playlistId: string, trackId: string) =>
+      ipcRenderer.invoke('storage:removeTrackFromPlaylist', playlistId, trackId),
+    recordPlay: (track: object) => ipcRenderer.invoke('storage:recordPlay', track),
+    exportM3U: (playlistId: string) => ipcRenderer.invoke('storage:exportM3U', playlistId),
+  },
+
   // Shell & Tray
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),
   onTrayAction: (cb: (action: 'toggle' | 'prev' | 'next') => void) => {

@@ -1,8 +1,7 @@
-import React from 'react';
-import { Play, Plus } from 'lucide-react';
-import { Track } from '../store';
+import React, { useState } from 'react';
+import { Play, Plus, Heart, ListPlus } from 'lucide-react';
+import { Track, usePlayerStore, useLibraryStore } from '../store';
 import { usePlayer } from '../lib/usePlayer';
-import { usePlayerStore } from '../store';
 
 interface TrackRowProps {
   track: Track;
@@ -20,8 +19,12 @@ function formatDuration(seconds: number): string {
 
 export default function TrackRow({ track, index, showIndex = false, queue }: TrackRowProps) {
   const { playTrack } = usePlayer();
-  const { currentTrack, isPlaying, addToQueue, setQueue } = usePlayerStore();
+  const { currentTrack, addToQueue, setQueue } = usePlayerStore();
+  const { favorites, setFavorites, customPlaylists, setCustomPlaylists } = useLibraryStore();
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+
   const isCurrentTrack = currentTrack?.id === track.id;
+  const isFavorited = favorites.some((f) => f.id === track.id);
 
   const handlePlay = () => {
     if (queue) {
@@ -31,14 +34,26 @@ export default function TrackRow({ track, index, showIndex = false, queue }: Tra
     playTrack(track);
   };
 
+  const handleToggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = await window.electronAPI?.storage?.toggleFavorite(track);
+    if (updated) setFavorites(updated);
+  };
+
+  const handleAddToPlaylist = async (playlistId: string) => {
+    const updated = await window.electronAPI?.storage?.addTrackToPlaylist(playlistId, track);
+    if (updated) setCustomPlaylists(updated);
+    setShowPlaylistMenu(false);
+  };
+
   return (
     <div
-      className={`group flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-container-high transition-colors cursor-pointer ${
+      className={`group relative flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-surface-container-high transition-colors cursor-pointer ${
         isCurrentTrack ? 'bg-primary-container/40' : ''
       }`}
       onDoubleClick={handlePlay}
     >
-      {/* Index or thumbnail */}
+      {/* Index or play button */}
       <div className="w-8 h-8 shrink-0 flex items-center justify-center">
         <span className={`text-sm tabular-nums group-hover:hidden ${isCurrentTrack ? 'text-primary' : 'text-on-surface-variant'}`}>
           {showIndex && index !== undefined ? index + 1 : null}
@@ -78,9 +93,55 @@ export default function TrackRow({ track, index, showIndex = false, queue }: Tra
       {/* Duration */}
       <span className="text-xs text-on-surface-variant tabular-nums w-10 text-right">{formatDuration(track.duration)}</span>
 
+      {/* Favorite button */}
+      <button
+        onClick={handleToggleFavorite}
+        className={`w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-highest transition-all ${
+          isFavorited ? 'text-primary opacity-100' : 'opacity-0 group-hover:opacity-100 text-on-surface-variant'
+        }`}
+        title={isFavorited ? 'Remove from Favorites' : 'Add to Favorites'}
+      >
+        <Heart size={15} fill={isFavorited ? 'currentColor' : 'none'} />
+      </button>
+
+      {/* Add to custom playlist button */}
+      {customPlaylists.length > 0 && (
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowPlaylistMenu((v) => !v);
+            }}
+            className="opacity-0 group-hover:opacity-100 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-highest text-on-surface-variant transition-all"
+            title="Add to playlist"
+          >
+            <ListPlus size={15} />
+          </button>
+          {showPlaylistMenu && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute right-0 bottom-9 z-30 w-44 rounded-xl bg-surface-container-highest border border-outline-variant shadow-xl py-1"
+            >
+              {customPlaylists.map((pl) => (
+                <button
+                  key={pl.id}
+                  onClick={() => handleAddToPlaylist(pl.id)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-on-surface hover:bg-primary/15 truncate"
+                >
+                  + {pl.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Add to queue button */}
       <button
-        onClick={(e) => { e.stopPropagation(); addToQueue(track); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          addToQueue(track);
+        }}
         className="opacity-0 group-hover:opacity-100 w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-highest text-on-surface-variant transition-all"
         title="Add to queue"
       >

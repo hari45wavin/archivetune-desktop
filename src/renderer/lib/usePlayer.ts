@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect } from 'react';
-import { usePlayerStore, Track } from '../store';
+import { usePlayerStore, useLibraryStore, Track, CustomPlaylist, TrackPlayStat } from '../store';
 
 declare global {
   interface Window {
@@ -75,6 +75,24 @@ declare global {
           duration?: number;
           position?: number;
         } | null) => Promise<{ ok: boolean }>;
+      };
+      storage: {
+        getState: () => Promise<{
+          favorites: Track[];
+          playlists: CustomPlaylist[];
+          playStats: Record<string, TrackPlayStat>;
+          totalListeningSeconds: number;
+        }>;
+        toggleFavorite: (track: Track) => Promise<Track[]>;
+        createPlaylist: (name: string) => Promise<CustomPlaylist[]>;
+        deletePlaylist: (playlistId: string) => Promise<CustomPlaylist[]>;
+        addTrackToPlaylist: (playlistId: string, track: Track) => Promise<CustomPlaylist[]>;
+        removeTrackFromPlaylist: (playlistId: string, trackId: string) => Promise<CustomPlaylist[]>;
+        recordPlay: (track: Track) => Promise<{
+          playStats: Record<string, TrackPlayStat>;
+          totalListeningSeconds: number;
+        }>;
+        exportM3U: (playlistId: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
       };
       minimize: () => void;
       maximize: () => void;
@@ -326,6 +344,13 @@ export function usePlayer() {
       setLoading(false);
       playbackStartTimestamp = Math.floor(Date.now() / 1000);
 
+      api.storage
+        ?.recordPlay(track)
+        .then((stats) => {
+          if (stats) useLibraryStore.getState().setStats(stats.playStats, stats.totalListeningSeconds);
+        })
+        .catch(() => {});
+
       api.scrobble.updateNowPlaying({
         artist: track.artist,
         track: track.title,
@@ -549,6 +574,17 @@ export function usePlayerEvents() {
     const api = window.electronAPI;
     if (!api || globalEventsRegistered) return;
     globalEventsRegistered = true;
+
+    api.storage
+      ?.getState()
+      .then((data) => {
+        if (!data) return;
+        const lib = useLibraryStore.getState();
+        lib.setFavorites(data.favorites || []);
+        lib.setCustomPlaylists(data.playlists || []);
+        lib.setStats(data.playStats || {}, data.totalListeningSeconds || 0);
+      })
+      .catch(() => {});
 
     const unsubProgress = api.player.onProgress((info: any) => {
       if (usingHtml5Fallback) return;

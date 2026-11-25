@@ -11,8 +11,9 @@ import {
   Download,
   Check,
   Sparkles,
+  Heart,
 } from 'lucide-react';
-import { usePlayerStore, useUIStore } from '../store';
+import { usePlayerStore, useUIStore, useLibraryStore } from '../store';
 import { usePlayer } from '../lib/usePlayer';
 
 function formatTime(seconds: number): string {
@@ -36,8 +37,17 @@ export default function MiniPlayer() {
 
   const { pause, resume, seek, skipNext, skipPrev, downloadCurrentTrack } = usePlayer();
   const { setShowNowPlaying } = useUIStore();
+  const { favorites, setFavorites } = useLibraryStore();
   const [downloading, setDownloading] = useState(false);
   const [downloadDone, setDownloadDone] = useState(false);
+
+  const isFavorited = currentTrack ? favorites.some((f) => f.id === currentTrack.id) : false;
+
+  const handleToggleFavorite = async () => {
+    if (!currentTrack) return;
+    const updated = await window.electronAPI?.storage?.toggleFavorite(currentTrack);
+    if (updated) setFavorites(updated);
+  };
 
   const handleSeek = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,6 +150,19 @@ export default function MiniPlayer() {
               Norm
             </span>
           )}
+
+          <button
+            onClick={handleToggleFavorite}
+            className={`p-1.5 rounded-lg transition-colors ${
+              isFavorited
+                ? 'text-primary hover:bg-surface-container-high'
+                : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+            }`}
+            title={isFavorited ? 'Remove from Favorites' : 'Add to Favorites'}
+            aria-label="Toggle Favorite"
+          >
+            <Heart size={14} fill={isFavorited ? 'currentColor' : 'none'} />
+          </button>
 
           <button
             onClick={handleQuickDownload}

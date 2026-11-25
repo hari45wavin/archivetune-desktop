@@ -14,6 +14,7 @@ import { setupScrobbleIPC } from './scrobble';
 import { setupSpotifyIPC } from './spotify';
 import { setupSponsorBlockIPC } from './sponsorblock';
 import { setupDiscordIPC, cleanupDiscord } from './discord';
+import { setupStorageIPC } from './storage';
 
 // Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
@@ -189,6 +190,7 @@ app.whenReady().then(() => {
   setupSpotifyIPC();
   setupSponsorBlockIPC();
   setupDiscordIPC();
+  setupStorageIPC();
 
   // Window control handlers
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
