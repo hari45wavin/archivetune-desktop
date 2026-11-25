@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('storage:removeTrackFromPlaylist', playlistId, trackId),
     recordPlay: (track: object) => ipcRenderer.invoke('storage:recordPlay', track),
     exportM3U: (playlistId: string) => ipcRenderer.invoke('storage:exportM3U', playlistId),
+    importM3U: () => ipcRenderer.invoke('storage:importM3U'),
   },
 
   // Shell, Updates & Tray

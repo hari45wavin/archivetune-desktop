@@ -177,4 +177,83 @@ export function setupStorageIPC() {
     fs.writeFileSync(result.filePath, lines.join('\n'), 'utf-8');
     return { ok: true, path: result.filePath };
   });
+
+  ipcMain.handle('storage:importM3U', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'M3U Playlist', extensions: ['m3u', 'm3u8'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false };
+
+    const filePath = result.filePaths[0];
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split(/\r?\n/).map((l) => l.trim());
+
+    let playlistName = path.basename(filePath, path.extname(filePath));
+    let pendingTitle = '';
+    let pendingArtist = 'Unknown Artist';
+    let pendingDuration = 0;
+    const importedTracks: StoredTrack[] = [];
+
+    for (const line of lines) {
+      if (!line) continue;
+      if (line.startsWith('#PLAYLIST:')) {
+        const name = line.slice(10).trim();
+        if (name) playlistName = name;
+        continue;
+      }
+      if (line.startsWith('#EXTINF:')) {
+        const commaIdx = line.indexOf(',');
+        const durPart = commaIdx > 8 ? Number(line.slice(8, commaIdx)) : 0;
+        pendingDuration = Number.isFinite(durPart) && durPart > 0 ? durPart : 0;
+        const label = commaIdx >= 0 ? line.slice(commaIdx + 1).trim() : '';
+        const dashIdx = label.indexOf(' - ');
+        if (dashIdx > 0) {
+          pendingArtist = label.slice(0, dashIdx).trim() || 'Unknown Artist';
+          pendingTitle = label.slice(dashIdx + 3).trim() || label;
+        } else {
+          pendingTitle = label;
+          pendingArtist = 'Unknown Artist';
+        }
+        continue;
+      }
+      if (line.startsWith('#')) continue;
+
+      const ytMatch = line.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+      if (ytMatch) {
+        importedTracks.push({
+          id: ytMatch[1],
+          title: pendingTitle || `YouTube Track (${ytMatch[1]})`,
+          artist: pendingArtist,
+          duration: pendingDuration,
+          thumbnail: `https://i.ytimg.com/vi/${ytMatch[1]}/hqdefault.jpg`,
+          source: 'youtube',
+        });
+      } else {
+        const resolvedPath = path.isAbsolute(line) ? line : path.resolve(path.dirname(filePath), line);
+        importedTracks.push({
+          id: resolvedPath,
+          title: pendingTitle || path.basename(resolvedPath, path.extname(resolvedPath)),
+          artist: pendingArtist,
+          duration: pendingDuration,
+          source: 'local',
+          path: resolvedPath,
+        });
+      }
+      pendingTitle = '';
+      pendingArtist = 'Unknown Artist';
+      pendingDuration = 0;
+    }
+
+    const data = loadStorage();
+    const playlist: CustomPlaylist = {
+      id: `pl-${crypto.randomUUID()}`,
+      name: playlistName,
+      tracks: importedTracks,
+      createdAt: Date.now(),
+    };
+    data.playlists = [playlist, ...data.playlists];
+    saveStorage(data);
+    return { ok: true, playlists: data.playlists, importedCount: importedTracks.length };
+  });
 }

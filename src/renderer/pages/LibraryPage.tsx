@@ -9,6 +9,7 @@ import {
   Plus,
   Trash2,
   Download,
+  Upload,
   Play,
   ChevronLeft,
 } from 'lucide-react';
@@ -124,6 +125,15 @@ export default function LibraryPage() {
     const res = await window.electronAPI?.storage?.exportM3U(id);
     if (res?.ok) {
       setExportMsg(`Exported to ${res.path}`);
+      setTimeout(() => setExportMsg(null), 4000);
+    }
+  };
+
+  const handleImportM3U = async () => {
+    const res = await window.electronAPI?.storage?.importM3U();
+    if (res?.ok && res.playlists) {
+      setCustomPlaylists(res.playlists);
+      setExportMsg(`Imported playlist (${res.importedCount ?? 0} tracks)`);
       setTimeout(() => setExportMsg(null), 4000);
     }
   };
@@ -340,6 +350,13 @@ export default function LibraryPage() {
                   className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold"
                 >
                   <Plus size={14} /> Create
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportM3U}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-xs font-semibold text-on-surface"
+                >
+                  <Upload size={14} /> Import M3U
                 </button>
               </form>
 

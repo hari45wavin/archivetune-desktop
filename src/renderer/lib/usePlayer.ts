@@ -99,6 +99,7 @@ declare global {
           totalListeningSeconds: number;
         }>;
         exportM3U: (playlistId: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+        importM3U: () => Promise<{ ok: boolean; playlists?: CustomPlaylist[]; importedCount?: number }>;
       };
       minimize: () => void;
       maximize: () => void;
