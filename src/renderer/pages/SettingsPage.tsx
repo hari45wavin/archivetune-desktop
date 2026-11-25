@@ -14,7 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useUIStore, usePlayerStore, useTogetherStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
+import { useUIStore, usePlayerStore, useTogetherStore, useLibraryStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
 import { usePlayer } from '../lib/usePlayer';
 
 const SEED_COLORS = [
@@ -60,6 +60,7 @@ export default function SettingsPage() {
   } = usePlayer();
 
   const [togetherJoinInput, setTogetherJoinInput] = useState('');
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
@@ -732,6 +733,50 @@ export default function SettingsPage() {
           )}
         </form>
         {togetherStatus && <p className="text-xs text-primary">{togetherStatus}</p>}
+      </section>
+
+      {/* Portable Backup & Restore */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-4 border border-outline-variant/30">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <FolderDown className="text-primary" size={22} />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface">Backup &amp; Restore</h2>
+              <p className="text-xs text-on-surface-variant">Export or merge favorites, custom playlists, play stats, and podcast subscriptions</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                const res = await window.electronAPI?.storage?.exportBackup();
+                if (res?.ok && res.path) setBackupStatus(`Exported backup to ${res.path}`);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+              Export JSON
+            </button>
+            <button
+              onClick={async () => {
+                const res = await window.electronAPI?.storage?.importBackup();
+                if (res?.ok && res.state) {
+                  const lib = useLibraryStore.getState();
+                  lib.setFavorites(res.state.favorites);
+                  lib.setCustomPlaylists(res.state.playlists);
+                  lib.setStats(res.state.playStats, res.state.totalListeningSeconds);
+                  setBackupStatus(
+                    `Restored ${res.state.favorites.length} favorites & ${res.state.playlists.length} playlists`
+                  );
+                } else if (res?.error) {
+                  setBackupStatus(res.error);
+                }
+              }}
+              className="px-3.5 py-2 rounded-xl bg-surface-container-high hover:bg-surface-container-highest text-xs font-semibold text-on-surface transition-colors"
+            >
+              Import JSON
+            </button>
+          </div>
+        </div>
+        {backupStatus && <p className="text-xs text-primary">{backupStatus}</p>}
       </section>
 
       {/* About & Updates */}

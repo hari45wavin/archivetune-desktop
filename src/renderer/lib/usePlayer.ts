@@ -110,6 +110,17 @@ declare global {
         }>;
         exportM3U: (playlistId: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
         importM3U: () => Promise<{ ok: boolean; playlists?: CustomPlaylist[]; importedCount?: number }>;
+        exportBackup: () => Promise<{ ok: boolean; path?: string }>;
+        importBackup: () => Promise<{
+          ok: boolean;
+          error?: string;
+          state?: {
+            favorites: Track[];
+            playlists: CustomPlaylist[];
+            playStats: Record<string, TrackPlayStat>;
+            totalListeningSeconds: number;
+          };
+        }>;
       };
       ai: {
         getConfig: () => Promise<{ configured: boolean; provider: 'openai' | 'openrouter' | 'gemini'; model: string; targetLanguage: string }>;

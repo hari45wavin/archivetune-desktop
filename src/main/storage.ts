@@ -256,4 +256,117 @@ export function setupStorageIPC() {
     saveStorage(data);
     return { ok: true, playlists: data.playlists, importedCount: importedTracks.length };
   });
+
+  ipcMain.handle('storage:exportBackup', async () => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: 'archivetune-backup.json',
+      filters: [{ name: 'ArchiveTune Backup', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+
+    const podcastsFile = path.join(app.getPath('userData'), 'podcasts-subs.json');
+    let podcasts: unknown[] = [];
+    try {
+      if (fs.existsSync(podcastsFile)) {
+        const parsed = JSON.parse(fs.readFileSync(podcastsFile, 'utf-8'));
+        if (Array.isArray(parsed)) podcasts = parsed;
+      }
+    } catch {
+      podcasts = [];
+    }
+
+    const payload = {
+      app: 'ArchiveTune Desktop',
+      backupVersion: 1,
+      exportedAt: new Date().toISOString(),
+      library: loadStorage(),
+      podcasts,
+    };
+    fs.writeFileSync(result.filePath, JSON.stringify(payload, null, 2), 'utf-8');
+    return { ok: true, path: result.filePath };
+  });
+
+  ipcMain.handle('storage:importBackup', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'ArchiveTune Backup', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return { ok: false };
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf-8'));
+      const lib = parsed?.library ?? parsed;
+      if (!lib || typeof lib !== 'object') return { ok: false, error: 'Invalid backup format' };
+
+      const current = loadStorage();
+      const existingFavIds = new Set(current.favorites.map((t) => t.id));
+      const mergedFavs = [...current.favorites];
+      for (const fav of Array.isArray(lib.favorites) ? lib.favorites : []) {
+        if (fav?.id && !existingFavIds.has(fav.id)) {
+          existingFavIds.add(fav.id);
+          mergedFavs.push(fav);
+        }
+      }
+
+      const existingPlIds = new Set(current.playlists.map((p) => p.id));
+      const mergedPlaylists = [...current.playlists];
+      for (const pl of Array.isArray(lib.playlists) ? lib.playlists : []) {
+        if (pl?.id && !existingPlIds.has(pl.id)) {
+          existingPlIds.add(pl.id);
+          mergedPlaylists.push(pl);
+        }
+      }
+
+      const mergedStats = { ...current.playStats };
+      if (lib.playStats && typeof lib.playStats === 'object') {
+        for (const [k, stat] of Object.entries<any>(lib.playStats)) {
+          if (!stat?.track) continue;
+          const prev = mergedStats[k];
+          mergedStats[k] = prev
+            ? {
+                track: prev.track,
+                playCount: Math.max(prev.playCount, Number(stat.playCount) || 0),
+                lastPlayedAt: Math.max(prev.lastPlayedAt, Number(stat.lastPlayedAt) || 0),
+              }
+            : stat;
+        }
+      }
+
+      const nextData: LibraryStorageData = {
+        favorites: mergedFavs,
+        playlists: mergedPlaylists,
+        playStats: mergedStats,
+        totalListeningSeconds: Math.max(
+          current.totalListeningSeconds,
+          Number(lib.totalListeningSeconds) || 0
+        ),
+      };
+      saveStorage(nextData);
+
+      if (Array.isArray(parsed?.podcasts) && parsed.podcasts.length > 0) {
+        const podcastsFile = path.join(app.getPath('userData'), 'podcasts-subs.json');
+        let curSubs: any[] = [];
+        try {
+          if (fs.existsSync(podcastsFile)) {
+            const existing = JSON.parse(fs.readFileSync(podcastsFile, 'utf-8'));
+            if (Array.isArray(existing)) curSubs = existing;
+          }
+        } catch {
+          curSubs = [];
+        }
+        const seenFeeds = new Set(curSubs.map((s) => s.feedUrl));
+        for (const show of parsed.podcasts) {
+          if (show?.feedUrl && !seenFeeds.has(show.feedUrl)) {
+            seenFeeds.add(show.feedUrl);
+            curSubs.push(show);
+          }
+        }
+        fs.writeFileSync(podcastsFile, JSON.stringify(curSubs, null, 2), 'utf-8');
+      }
+
+      return { ok: true, state: nextData };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Failed to read backup file' };
+    }
+  });
 }

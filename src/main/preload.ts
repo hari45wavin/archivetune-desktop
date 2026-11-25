@@ -112,6 +112,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     recordPlay: (track: object) => ipcRenderer.invoke('storage:recordPlay', track),
     exportM3U: (playlistId: string) => ipcRenderer.invoke('storage:exportM3U', playlistId),
     importM3U: () => ipcRenderer.invoke('storage:importM3U'),
+    exportBackup: () => ipcRenderer.invoke('storage:exportBackup'),
+    importBackup: () => ipcRenderer.invoke('storage:importBackup'),
   },
 
   // AI Lyrics Translation
