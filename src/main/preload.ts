@@ -123,6 +123,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('ai:translateLyrics', lines, targetLanguage),
   },
 
+  // Together Mode
+  together: {
+    startHost: (port?: number) => ipcRenderer.invoke('together:startHost', port),
+    stopHost: () => ipcRenderer.invoke('together:stopHost'),
+    broadcast: (state: object) => ipcRenderer.invoke('together:broadcast', state),
+    getHostStatus: () => ipcRenderer.invoke('together:getHostStatus'),
+  },
+
   // Shell, Updates & Tray
   checkUpdates: () => ipcRenderer.invoke('app:checkUpdates'),
   openExternal: (url: string) => ipcRenderer.send('shell:openExternal', url),

@@ -321,3 +321,23 @@ export const useLibraryStore = create<LibraryState>((set) => ({
   setCustomPlaylists: (customPlaylists) => set({ customPlaylists }),
   setStats: (playStats, totalListeningSeconds) => set({ playStats, totalListeningSeconds }),
 }));
+
+interface TogetherState {
+  hostingUrl: string | null;
+  hostingClients: number;
+  connectedUrl: string | null;
+  togetherStatus: string | null;
+  setHosting: (hostingUrl: string | null, hostingClients?: number) => void;
+  setConnected: (connectedUrl: string | null) => void;
+  setTogetherStatus: (togetherStatus: string | null) => void;
+}
+
+export const useTogetherStore = create<TogetherState>((set) => ({
+  hostingUrl: null,
+  hostingClients: 0,
+  connectedUrl: null,
+  togetherStatus: null,
+  setHosting: (hostingUrl, hostingClients = 0) => set({ hostingUrl, hostingClients }),
+  setConnected: (connectedUrl) => set({ connectedUrl }),
+  setTogetherStatus: (togetherStatus) => set({ togetherStatus }),
+}));

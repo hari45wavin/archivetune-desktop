@@ -6,7 +6,14 @@
  */
 
 import { useCallback, useEffect } from 'react';
-import { usePlayerStore, useLibraryStore, Track, CustomPlaylist, TrackPlayStat } from '../store';
+import {
+  usePlayerStore,
+  useLibraryStore,
+  useTogetherStore,
+  Track,
+  CustomPlaylist,
+  TrackPlayStat,
+} from '../store';
 
 declare global {
   interface Window {
@@ -109,6 +116,17 @@ declare global {
         configure: (input: { provider: 'openai' | 'openrouter' | 'gemini'; apiKey?: string; model?: string; targetLanguage?: string }) => Promise<{ ok: boolean; configured: boolean }>;
         translateLyrics: (lines: string[], targetLanguage?: string) => Promise<{ ok: boolean; translated?: string[]; language?: string; error?: string }>;
       };
+      together: {
+        startHost: (port?: number) => Promise<{ ok: boolean; url?: string; clients?: number; error?: string }>;
+        stopHost: () => Promise<{ ok: boolean }>;
+        broadcast: (state: {
+          track: Track | null;
+          isPlaying: boolean;
+          position: number;
+          updatedAt: number;
+        }) => Promise<{ ok: boolean; clients: number }>;
+        getHostStatus: () => Promise<{ hosting: boolean; clients: number }>;
+      };
       minimize: () => void;
       maximize: () => void;
       close: () => void;
@@ -135,6 +153,37 @@ let playbackStartTimestamp = 0;
 let fallbackEndedHandler: (() => void) | null = null;
 let activeSkipSegments: Array<{ start: number; end: number; category: string }> = [];
 let lastSkippedEnd = -1;
+let togetherWs: WebSocket | null = null;
+let togetherSyncLock = false;
+
+function broadcastTogetherSnapshot(positionOverride?: number) {
+  if (togetherSyncLock || !useTogetherStore.getState().hostingUrl) return;
+  const { currentTrack: ct, isPlaying: playing, position } = usePlayerStore.getState();
+  window.electronAPI?.together
+    ?.broadcast({
+      track: ct
+        ? {
+            id: ct.id,
+            title: ct.title,
+            artist: ct.artist,
+            album: ct.album,
+            thumbnail: ct.thumbnail,
+            duration: ct.duration,
+            source: ct.source,
+          }
+        : null,
+      isPlaying: playing,
+      position: typeof positionOverride === 'number' ? positionOverride : position,
+      updatedAt: Date.now(),
+    })
+    .then((res) => {
+      const curUrl = useTogetherStore.getState().hostingUrl;
+      if (res?.ok && curUrl) {
+        useTogetherStore.getState().setHosting(curUrl, res.clients);
+      }
+    })
+    .catch(() => {});
+}
 
 async function resolveTrackStream(track: Track): Promise<{ url: string; ytVideoId: string | null }> {
   const api = window.electronAPI;
@@ -416,6 +465,7 @@ export function usePlayer() {
       await window.electronAPI?.player.seek(seconds);
     }
     setPosition(seconds);
+    broadcastTogetherSnapshot(seconds);
   }, [setPosition]);
 
   const skipNext = useCallback(async () => {
@@ -462,6 +512,109 @@ export function usePlayer() {
     });
   }, [currentTrack]);
 
+  const leaveTogetherRoom = useCallback(() => {
+    if (togetherWs) {
+      togetherWs.close();
+      togetherWs = null;
+    }
+    useTogetherStore.getState().setConnected(null);
+    useTogetherStore.getState().setTogetherStatus('Disconnected from room');
+  }, []);
+
+  const startTogetherHost = useCallback(async () => {
+    leaveTogetherRoom();
+    const res = await window.electronAPI?.together?.startHost(47820);
+    if (res?.ok && res.url) {
+      useTogetherStore.getState().setHosting(res.url, res.clients || 0);
+      useTogetherStore.getState().setTogetherStatus(`Hosting room at ${res.url}`);
+      broadcastTogetherSnapshot();
+    } else {
+      useTogetherStore.getState().setTogetherStatus(res?.error || 'Failed to start Together host');
+    }
+    return res;
+  }, [leaveTogetherRoom]);
+
+  const stopTogetherHost = useCallback(async () => {
+    await window.electronAPI?.together?.stopHost();
+    useTogetherStore.getState().setHosting(null, 0);
+    useTogetherStore.getState().setTogetherStatus('Stopped hosting room');
+  }, []);
+
+  const joinTogetherRoom = useCallback((rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return;
+    const normalized = /^wss?:\/\//i.test(trimmed) ? trimmed : `ws://${trimmed}`;
+    if (useTogetherStore.getState().hostingUrl) {
+      stopTogetherHost().catch(() => {});
+    }
+    leaveTogetherRoom();
+    useTogetherStore.getState().setTogetherStatus(`Connecting to ${normalized}...`);
+
+    try {
+      const ws = new WebSocket(normalized);
+      togetherWs = ws;
+
+      ws.onopen = () => {
+        useTogetherStore.getState().setConnected(normalized);
+        useTogetherStore.getState().setTogetherStatus(`Connected to ${normalized}`);
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          const msg = JSON.parse(String(event.data));
+          if (msg.type !== 'state') return;
+          const remoteTrack = msg.track as Track | null;
+          const remotePlaying = Boolean(msg.isPlaying);
+          const remotePos = Number(msg.position || 0);
+
+          togetherSyncLock = true;
+          try {
+            const state = usePlayerStore.getState();
+            if (!remoteTrack) {
+              if (state.isPlaying) await pause();
+              return;
+            }
+            if (state.currentTrack?.id !== remoteTrack.id) {
+              await playTrack(remoteTrack);
+              if (remotePos > 2) {
+                await seek(remotePos);
+              }
+              if (!remotePlaying) {
+                await pause();
+              }
+            } else {
+              if (remotePlaying !== state.isPlaying) {
+                if (remotePlaying) await resume();
+                else await pause();
+              }
+              if (Math.abs(state.position - remotePos) > 2.5) {
+                await seek(remotePos);
+              }
+            }
+          } finally {
+            togetherSyncLock = false;
+          }
+        } catch {
+          // Ignore malformed payloads
+        }
+      };
+
+      ws.onerror = () => {
+        useTogetherStore.getState().setTogetherStatus('Connection error — check LAN IP/port & firewall');
+      };
+
+      ws.onclose = () => {
+        if (togetherWs === ws) togetherWs = null;
+        if (useTogetherStore.getState().connectedUrl === normalized) {
+          useTogetherStore.getState().setConnected(null);
+          useTogetherStore.getState().setTogetherStatus('Disconnected from host');
+        }
+      };
+    } catch {
+      useTogetherStore.getState().setTogetherStatus('Invalid WebSocket room URL');
+    }
+  }, [leaveTogetherRoom, pause, playTrack, resume, seek, stopTogetherHost]);
+
   // Keep HTML5 fallback volume synchronized with store volume
   useEffect(() => {
     if (usingHtml5Fallback && fallbackAudio) {
@@ -499,6 +652,10 @@ export function usePlayer() {
     toggleNormalization,
     changeEq,
     downloadCurrentTrack,
+    startTogetherHost,
+    stopTogetherHost,
+    joinTogetherRoom,
+    leaveTogetherRoom,
   };
 }
 
@@ -507,6 +664,11 @@ let globalEventsRegistered = false;
 export function usePlayerEvents() {
   const { currentTrack, isPlaying, discordRpcEnabled, setPosition, setDuration } = usePlayerStore();
   const { skipNext, skipPrev, pause, resume, seek } = usePlayer();
+
+  // Broadcast state to Together Mode LAN listeners on track / playback changes
+  useEffect(() => {
+    broadcastTogetherSnapshot();
+  }, [currentTrack, isPlaying]);
 
   // Sync Discord Rich Presence on track/play state changes
   useEffect(() => {

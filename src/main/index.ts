@@ -16,6 +16,7 @@ import { setupSponsorBlockIPC } from './sponsorblock';
 import { setupDiscordIPC, cleanupDiscord } from './discord';
 import { setupStorageIPC } from './storage';
 import { setupAIIPC } from './ai';
+import { setupTogetherIPC, stopTogetherServer } from './together';
 
 // Memory footprint optimizations (keeps V8 & Chromium network overhead lean)
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
@@ -193,6 +194,7 @@ app.whenReady().then(() => {
   setupDiscordIPC();
   setupStorageIPC();
   setupAIIPC();
+  setupTogetherIPC();
 
   // Window control handlers
   ipcMain.on('window:minimize', () => mainWindow?.minimize());
@@ -260,15 +262,18 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   cleanupMpv();
   cleanupDiscord();
+  stopTogetherServer();
 });
 
 app.on('will-quit', () => {
   cleanupMpv();
   cleanupDiscord();
+  stopTogetherServer();
 });
 
 app.on('window-all-closed', () => {
   cleanupMpv();
   cleanupDiscord();
+  stopTogetherServer();
   if (process.platform !== 'darwin') app.quit();
 });

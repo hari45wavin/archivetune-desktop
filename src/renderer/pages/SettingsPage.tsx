@@ -11,9 +11,10 @@ import {
   FolderDown,
   Clock,
   Languages,
+  Users,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useUIStore, usePlayerStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
+import { useUIStore, usePlayerStore, useTogetherStore, EQ_BAND_LABELS, EQ_PRESETS } from '../store';
 import { usePlayer } from '../lib/usePlayer';
 
 const SEED_COLORS = [
@@ -43,7 +44,22 @@ export default function SettingsPage() {
     eqPreset,
     eqBands,
   } = usePlayerStore();
-  const { toggleNormalization, changeEq } = usePlayer();
+  const {
+    hostingUrl,
+    hostingClients,
+    connectedUrl,
+    togetherStatus,
+  } = useTogetherStore();
+  const {
+    toggleNormalization,
+    changeEq,
+    startTogetherHost,
+    stopTogetherHost,
+    joinTogetherRoom,
+    leaveTogetherRoom,
+  } = usePlayer();
+
+  const [togetherJoinInput, setTogetherJoinInput] = useState('');
 
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
@@ -646,6 +662,76 @@ export default function SettingsPage() {
           </div>
           {aiStatus && <p className="text-xs text-primary">{aiStatus}</p>}
         </form>
+      </section>
+
+      {/* Together Mode (LAN Synced Listening) */}
+      <section className="bg-surface-container rounded-2xl p-5 space-y-4 border border-outline-variant/30">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <Users className="text-primary" size={22} />
+            <div>
+              <h2 className="text-base font-semibold text-on-surface">Together Mode (LAN Sync)</h2>
+              <p className="text-xs text-on-surface-variant">Host a room or join a friend on the same LAN/VPN to sync playback</p>
+            </div>
+          </div>
+          {hostingUrl ? (
+            <button
+              onClick={() => stopTogetherHost()}
+              className="px-4 py-2 rounded-xl bg-error/20 text-error text-xs font-semibold hover:bg-error/30 transition-colors"
+            >
+              Stop Hosting
+            </button>
+          ) : (
+            <button
+              onClick={() => startTogetherHost()}
+              className="px-4 py-2 rounded-xl bg-primary text-on-primary text-xs font-semibold hover:opacity-90 transition-opacity"
+            >
+              Host Room
+            </button>
+          )}
+        </div>
+
+        {hostingUrl && (
+          <div className="flex items-center justify-between flex-wrap gap-2 bg-primary/10 px-3.5 py-2.5 rounded-xl text-xs">
+            <span className="text-on-surface font-mono select-all">{hostingUrl}</span>
+            <span className="text-primary font-semibold">
+              {hostingClients} listener{hostingClients === 1 ? '' : 's'} connected
+            </span>
+          </div>
+        )}
+
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            joinTogetherRoom(togetherJoinInput);
+          }}
+          className="flex flex-col sm:flex-row gap-3"
+        >
+          <input
+            type="text"
+            value={togetherJoinInput}
+            onChange={(e) => setTogetherJoinInput(e.target.value)}
+            placeholder="ws://192.168.x.x:47820"
+            className="flex-1 px-3 py-2 text-sm rounded-xl bg-surface-container-high text-on-surface border border-outline-variant/20 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          {connectedUrl ? (
+            <button
+              type="button"
+              onClick={() => leaveTogetherRoom()}
+              className="px-4 py-2 rounded-xl bg-surface-container-high text-on-surface text-xs font-medium hover:bg-surface-container-highest transition-colors shrink-0"
+            >
+              Leave Room
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="px-4 py-2 rounded-xl bg-surface-container-high text-on-surface text-xs font-medium hover:bg-surface-container-highest transition-colors shrink-0"
+            >
+              Join Room
+            </button>
+          )}
+        </form>
+        {togetherStatus && <p className="text-xs text-primary">{togetherStatus}</p>}
       </section>
 
       {/* About & Updates */}
